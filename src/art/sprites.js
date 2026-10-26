@@ -1,0 +1,265 @@
+// Pixel sprites: authored as character grids, or generated per pixel.
+// Every character sprite gets a 1px dark outline so it reads on any ground.
+import { mulberry32 } from '../rng.js';
+
+export function canvas(w, h) {
+  const c = document.createElement('canvas');
+  c.width = w;
+  c.height = h;
+  return c;
+}
+
+export function pix(rows, pal) {
+  const w = Math.max(...rows.map((r) => r.length)), h = rows.length;
+  const c = canvas(w, h);
+  const g = c.getContext('2d');
+  rows.forEach((row, y) => {
+    for (let x = 0; x < row.length; x++) {
+      const col = pal[row[x]];
+      if (col) { g.fillStyle = col; g.fillRect(x, y, 1, 1); }
+    }
+  });
+  return c;
+}
+
+export function outline(src, color = '#16130e') {
+  const w = src.width + 2, h = src.height + 2;
+  const c = canvas(w, h);
+  const g = c.getContext('2d');
+  g.drawImage(src, 1, 1);
+  const img = g.getImageData(0, 0, w, h);
+  const d = img.data;
+  const solid = (x, y) => x >= 0 && y >= 0 && x < w && y < h && d[(y * w + x) * 4 + 3] > 0;
+  const [r, gg, b] = [1, 3, 5].map((i) => parseInt(color.slice(i, i + 2), 16));
+  const marks = [];
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      if (solid(x, y)) continue;
+      if (solid(x - 1, y) || solid(x + 1, y) || solid(x, y - 1) || solid(x, y + 1)) marks.push((y * w + x) * 4);
+    }
+  }
+  for (const i of marks) { d[i] = r; d[i + 1] = gg; d[i + 2] = b; d[i + 3] = 255; }
+  g.putImageData(img, 0, 0);
+  return c;
+}
+
+export function flipH(src) {
+  const c = canvas(src.width, src.height);
+  const g = c.getContext('2d');
+  g.translate(src.width, 0);
+  g.scale(-1, 1);
+  g.drawImage(src, 0, 0);
+  return c;
+}
+
+// Generate a sprite by calling fn(x, y) -> color | null for every pixel.
+export function gen(w, h, fn) {
+  const c = canvas(w, h);
+  const g = c.getContext('2d');
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      const col = fn(x, y);
+      if (col) { g.fillStyle = col; g.fillRect(x, y, 1, 1); }
+    }
+  }
+  return c;
+}
+
+// ---------- explorers ----------
+const HEAD_FRONT = ['...hhhh...', '..hhhhhh..', '.HHHHHHHH.', '..ssssss..', '..sKssKs..', '..ssssss..'];
+const BODY_FRONT = ['..CccccC..', '.scccccccs', '.sCccccCs.', '..cccccc..', '..bbbbbb..'];
+const HEAD_BACK = ['...hhhh...', '..hhhhhh..', '.HHHHHHHH.', '..hhhhhh..', '..Hhhhhh..', '...ssss...'];
+const BODY_BACK = ['..CkkkkC..', '.skkkkkkks', '.sCkkkkCs.', '..cccccc..', '..bbbbbb..'];
+const HEAD_SIDE = ['...hhhh...', '..hhhhhh..', '..HHHHHHHH', '...sssss..', '...sssKs..', '...sssss..'];
+const BODY_SIDE = ['..kkcccc..', '..kkcccs..', '..kkcccc..', '...cccc...', '...bbbb...'];
+const LEGS_FB = [
+  ['..pp..pp..', '..pp..pp..', '..oo..oo..'],
+  ['..pp..pp..', '...p..pp..', '...o..oo..'],
+  ['..pp..pp..', '..pp..p...', '..oo..o...'],
+];
+const LEGS_SIDE = [
+  ['....pp....', '....pp....', '....ooo...'],
+  ['...p..p...', '..p....p..', '.oo....oo.'],
+  ['....pp....', '....pp....', '....ooo...'],
+];
+
+const EXPLORER_PAL = [
+  { c: '#e88a3f', C: '#a8551f' },
+  { c: '#45bfd0', C: '#24808f' },
+];
+
+export function explorerSprites(id) {
+  const pal = {
+    ...EXPLORER_PAL[id],
+    s: '#f0c08a', K: '#2a1d14', h: '#9a6a3a', H: '#5e3d1f', b: '#3b2a1a',
+    p: '#3e4a6b', o: '#2b2118', k: '#7a6a3a',
+  };
+  const build = (head, body, legs) => legs.map((l) => outline(pix([...head, ...body, ...l], pal)));
+  const side = build(HEAD_SIDE, BODY_SIDE, LEGS_SIDE);
+  return {
+    down: build(HEAD_FRONT, BODY_FRONT, LEGS_FB),
+    up: build(HEAD_BACK, BODY_BACK, LEGS_FB),
+    right: side,
+    left: side.map(flipH),
+  };
+}
+
+// ---------- raptor ----------
+const RAPTOR_TOP = [
+  '...............GGG..',
+  '..............GGGGGG',
+  '..............GEGGGG',
+  'D............GGGGTT.',
+  'GD..........GGGG....',
+  '.GDG......GGGGGL....',
+  '..GDGDGGGGGGGGGL....',
+  '....GGDGGDGGGGG.....',
+  '......BBBBBBBB......',
+];
+const RAPTOR_LEGS = [
+  ['.......LL...LL......', '......LL.....LL.....', '.....KK.....KK......'],
+  ['.........LLL........', '........LL.L........', '.......KK..KK.......'],
+];
+
+export function raptorSprites(stunned = false) {
+  const pal = stunned
+    ? { G: '#c9b84a', D: '#8a7a28', B: '#e8e2a8', E: '#ffffff', T: '#f4f0e0', L: '#9a8a3a', K: '#2e2a20' }
+    : { G: '#86a843', D: '#4e6b28', B: '#d2d08e', E: '#ffe14d', T: '#f4f0e0', L: '#5a7a2e', K: '#2e2a20' };
+  const right = RAPTOR_LEGS.map((l) => outline(pix([...RAPTOR_TOP, ...l], pal), '#141a0e'));
+  return { right, left: right.map(flipH) };
+}
+
+// ---------- trees ----------
+const TREE_PAL = ['#1f4a2a', '#2f6b3a', '#3f8547', '#5aa55a'];
+export function treeSprites() {
+  const out = [];
+  for (let v = 0; v < 3; v++) {
+    const rng = mulberry32(101 + v * 7);
+    const w = 22, h = 28;
+    const blobs = [
+      { x: 11, y: 10, r: 8.5 + rng() },
+      { x: 5.5 + rng(), y: 13, r: 5.5 + rng() },
+      { x: 16.5 - rng(), y: 13, r: 5.5 + rng() },
+      { x: 9 + rng() * 4, y: 5, r: 5 + rng() },
+    ];
+    const inside = (x, y) => blobs.some((b) => Math.hypot(x + 0.5 - b.x, y + 0.5 - b.y) < b.r);
+    const c = gen(w, h, (x, y) => {
+      if (inside(x, y) && y < 20) {
+        const nx = (x - 11) / 10, ny = (y - 9) / 10;
+        let l = -(nx * 0.55 + ny * 0.85) + (rng() - 0.5) * 0.5;
+        if (!inside(x, y + 2)) l -= 0.6;
+        const i = l > 0.55 ? 3 : l > 0.05 ? 2 : l > -0.5 ? 1 : 0;
+        return TREE_PAL[i];
+      }
+      if (y >= 16 && y < 26 && x >= 9 && x <= 12) return x === 12 ? '#4a321c' : x === 9 ? '#8a6238' : '#6b4a2b';
+      return null;
+    });
+    out.push(outline(c, '#122a18'));
+  }
+  return out;
+}
+
+// ---------- props ----------
+export function tentSprite() {
+  return outline(gen(30, 20, (x, y) => {
+    const half = (y + 1) * 0.75;
+    const dx = x - 15;
+    if (Math.abs(dx + 0.5) > half) return null;
+    if (y > 9 && Math.abs(dx + 0.5) < (y - 9) * 0.45) return '#3a1a10'; // door
+    if (y === 19) return '#7a2f18';
+    return dx < 0 ? '#e0663a' : '#b84a26';
+  }), '#2a120a');
+}
+
+export function crateSprite() {
+  return outline(pix([
+    '..b.....b...',
+    '.bbb...bbb..',
+    'wwwwwwwwwwww',
+    'WddddddddddW',
+    'WdWWWWWWWWdW',
+    'WddddddddddW',
+    'WdWWWWWWWWdW',
+    'WddddddddddW',
+  ], { b: '#f1e6c8', w: '#a8784a', W: '#5e3d22', d: '#8a5f36' }));
+}
+
+export function fireFrames() {
+  const frames = [];
+  for (let f = 0; f < 4; f++) {
+    const rng = mulberry32(900 + f);
+    const heights = Array.from({ length: 10 }, (_, x) => {
+      const bell = 1 - Math.abs(x - 4.5) / 5;
+      return Math.max(0, bell * 11 + (rng() - 0.5) * 4);
+    });
+    frames.push(gen(10, 14, (x, y) => {
+      if (y >= 11) return (x + y) % 3 === 0 ? '#3a2614' : (y === 11 ? '#7a5230' : '#5e3d22');
+      const hgt = heights[x];
+      const fromBottom = 11 - y;
+      if (fromBottom > hgt) return null;
+      const t = fromBottom / Math.max(1, hgt);
+      if (t < 0.35 && Math.abs(x - 4.5) < 2.5) return '#fff3b0';
+      if (t < 0.65) return '#ffc53d';
+      if (t < 0.9) return '#ff7a1a';
+      return '#d0381a';
+    }));
+  }
+  return frames;
+}
+
+export function moundSprite() {
+  return gen(16, 9, (x, y) => {
+    const nx = (x - 7.5) / 8, ny = (y - 5) / 4.5;
+    const d = nx * nx + ny * ny;
+    if (d > 1) return null;
+    if (d > 0.75) return '#4a2e18';
+    return ny < -0.2 ? '#a8713e' : (x + y) % 4 === 0 ? '#6e4424' : '#8a5a33';
+  });
+}
+
+export function holeSprite() {
+  return gen(14, 8, (x, y) => {
+    const nx = (x - 6.5) / 7, ny = (y - 4) / 4;
+    const d = nx * nx + ny * ny;
+    if (d > 1) return null;
+    if (d > 0.6) return ny < 0 ? '#4a2e18' : '#8a5a33';
+    return '#24160c';
+  });
+}
+
+export const boneSprite = (col = '#f4ead2') => pix(['bb...bb', '.bbbbb.', 'bb...bb'], { b: col });
+
+export const trapSprite = () => outline(pix([
+  '.t.t.t.t.',
+  'ttttttttt',
+  't..ggg..t',
+  'ttttttttt',
+], { t: '#b8b8b0', g: '#6a6a64' }));
+
+export const heartSprite = (full) => pix([
+  '.rr.rr.', 'rrrrrrr', 'rrrrrrr', '.rrrrr.', '..rrr..', '...r...',
+], { r: full ? '#ff5a5a' : '#4a3a3a' });
+
+export const sunSprite = () => gen(9, 9, (x, y) => {
+  const d = Math.hypot(x - 4, y - 4);
+  if (d < 2.6) return '#ffe08a';
+  if (d < 4.6 && (x === 4 || y === 4 || x === y || x + y === 8)) return '#ffc53d';
+  return null;
+});
+
+export const moonSprite = () => gen(9, 9, (x, y) => {
+  const d = Math.hypot(x - 4, y - 4), cut = Math.hypot(x - 6, y - 3);
+  return d < 4 && cut > 3 ? '#cfd8ff' : null;
+});
+
+export const shadowSprite = (w, h) => gen(w, h, (x, y) => {
+  const nx = (x + 0.5 - w / 2) / (w / 2), ny = (y + 0.5 - h / 2) / (h / 2);
+  return nx * nx + ny * ny <= 1 ? 'rgba(10,14,6,0.35)' : null;
+});
+
+export const tuftSprite = () => pix([
+  'l..l.l..l..l.',
+  'l.ll.l.ll.ll.',
+  'dldl.ldldldld',
+  'ddddddddddddd',
+], { l: '#6aa04a', d: '#2f5a24' });

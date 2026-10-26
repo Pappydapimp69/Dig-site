@@ -34,7 +34,7 @@ function endRun() {
 }
 
 const EVENT_TEXT = {
-  bone: (e) => `P${e.id + 1} dug up a ${speciesById[e.sp].name} bone`,
+  bone: (e) => `${speciesById[e.sp].name} bone!`,
   deposit: (e) => `+$${e.gained} for the museum`,
   night: (e) => `Night ${e.n}. They're coming.`,
   dawn: () => 'Dawn. Get digging.',
@@ -47,7 +47,7 @@ function drainEvents() {
   for (const e of run.events) {
     SFX[e.type]?.();
     const t = EVENT_TEXT[e.type];
-    if (t) R.toast(t(e));
+    R.event({ ...e, text: t ? t(e) : null }, run);
   }
   run.events.length = 0;
 }
@@ -85,9 +85,9 @@ function frame(now) {
     R.drawGame(run, dt);
     if (run.over) endRun();
   } else if (screen === 'menu') {
-    R.drawMenu(save, msg);
+    R.drawMenu(save, msg, now / 1000);
   } else {
-    R.drawSummary(run);
+    R.drawSummary(run, now / 1000);
   }
   requestAnimationFrame(frame);
 }

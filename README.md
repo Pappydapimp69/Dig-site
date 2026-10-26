@@ -48,5 +48,7 @@ npm run smoke        # headless browser playtest (needs Playwright)
 - `src/world.js` - island generation. Every dig site is checked reachable from camp.
 - `src/data.js` - all tuning numbers and content tables.
 - `src/save.js` - museum save, upgrades, collection.
-- `src/render.js`, `src/input.js`, `src/sfx.js`, `src/main.js` - the browser side.
+- `src/render.js` - pixel-art renderer. Draws at 480x300; the page scales it up crisp.
+- `src/art/` - bitmap font, sprites (authored grids + generated), island pre-render.
+- `src/input.js`, `src/sfx.js`, `src/main.js` - the rest of the browser side.
 - `electron/` - desktop wrapper.
