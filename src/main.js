@@ -228,14 +228,15 @@ setupTouch();
 // In build mode the touch buttons change job.
 let touchMode = '';
 function relabelTouch() {
-  const building = run && run.players[0].build !== null;
-  const mode = building ? 'build' : 'play';
+  const b = run && run.players[0].build;
+  const mode = b ? b.mode : 'play';
   if (mode === touchMode) return;
   touchMode = mode;
-  const set = (id, t) => { const b = document.getElementById(id); if (b) b.textContent = t; };
-  set('btn-dig', building ? 'PLACE' : 'DIG');
-  set('btn-trap', building ? 'NEXT' : 'TRAP');
-  set('btn-build', building ? 'DONE' : 'BUILD');
+  const set = (id, t) => { const el = document.getElementById(id); if (el) el.textContent = t; };
+  const labels = { play: ['DIG', 'TRAP', 'BUILD'], menu: ['CHOOSE', 'NEXT', 'CLOSE'], place: ['PLACE', 'BACK', 'CANCEL'] }[mode];
+  set('btn-dig', labels[0]);
+  set('btn-trap', labels[1]);
+  set('btn-build', labels[2]);
 }
 
 function frame(now) {
@@ -277,7 +278,11 @@ window.__digsite = {
   start,
   startTutorial,
   get tutorial() { return tut; },
-  buildName() { const p = run && run.players[0]; return p && p.build !== null ? buildList(run)[p.build]?.id : null; },
+  buildName() {
+    const b = run && run.players[0].build;
+    return !b ? null : b.mode === 'menu' ? buildList(run)[b.sel]?.id : b.id;
+  },
+  get buildMode() { return run && run.players[0].build ? run.players[0].build.mode : null; },
   step(seconds, inputs = []) {
     for (let t = 0; t < seconds && run && !run.over; t += STEP) update(run, inputs, STEP);
   },

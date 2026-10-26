@@ -35,22 +35,19 @@ async function waitFor(page, fn, timeout = 6000) {
       p.x = s.world.camp.x; p.y = s.world.camp.y + 70; p.fx = 0; p.fy = 1;
     });
     await tap('KeyB');
-    if (await page.evaluate(() => window.__digsite.run.players[0].build) === null) throw new Error('build mode did not open');
-    // Cycle to the wood wall and build it.
-    for (let i = 0; i < 12; i++) {
-      const id = await page.evaluate(() => { const s = window.__digsite.run; return s.players[0].build; });
-      const name = await page.evaluate(() => window.__digsite.buildName());
-      if (name === 'wall') break;
-      await tap('KeyQ');
-    }
+    if (await page.evaluate(() => window.__digsite.buildMode) !== 'menu') throw new Error('build menu did not open');
+    if (shots) await page.screenshot({ path: path.join(shots, 'build-menu.png') });
+    for (let i = 0; i < 12 && (await page.evaluate(() => window.__digsite.buildName())) !== 'wall'; i++) await tap('KeyS');
+    await tap('KeyE');
+    if (await page.evaluate(() => window.__digsite.buildMode) !== 'place') throw new Error('no placement after choosing');
     if (shots) await page.screenshot({ path: path.join(shots, 'build-ghost.png') });
     await tap('KeyE');
     await waitFor(page, () => window.__digsite.run.structures.some((x) => x.kind === 'wall'));
-    // Craft a spear, then leave build mode.
-    for (let i = 0; i < 12 && (await page.evaluate(() => window.__digsite.buildName())) !== 'spear'; i++) await tap('KeyQ');
+    if (await page.evaluate(() => window.__digsite.buildMode) !== null) throw new Error('build mode stayed open after placing');
+    await tap('KeyB');
+    for (let i = 0; i < 12 && (await page.evaluate(() => window.__digsite.buildName())) !== 'spear'; i++) await tap('KeyS');
     await tap('KeyE');
     await waitFor(page, () => window.__digsite.run.owned.spear === true);
-    await tap('KeyB');
     // Spear a raptor placed in front of you.
     await page.evaluate(() => {
       const s = window.__digsite.run, p = s.players[0];

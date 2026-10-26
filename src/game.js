@@ -69,7 +69,9 @@ export function newRun({ seed = 1, players = 1, upgrades = {}, perks = [], reque
     ps.push({
       id: i, x: world.camp.x + (players > 1 ? (i ? 18 : -18) : 0), y: world.camp.y + 30,
       hp: st.hp, carry: [], digT: 0, chopT: 0, mineT: 0, down: false, reviveT: 0, invuln: 0, slow: 0,
-      traps: st.traps, held: {}, moving: false, fx: 0, fy: 1, build: null, atkCd: 0, swing: 0,
+      traps: st.traps, held: {}, moving: false, fx: 0, fy: 1, atkCd: 0, swing: 0,
+      // build: null, { mode: 'menu', sel } while choosing, or { mode: 'place', id } with a ghost out.
+      build: null, lastSel: 0,
     });
   }
   return {
@@ -372,6 +374,38 @@ function updatePlayer(s, p, inp, dt) {
   p.swing = Math.max(0, p.swing - dt);
   if (p.down) { for (const k of ['dig', 'trap', 'build', 'attack']) p.held[k] = !!inp[k]; return; }
 
+  const digPress = pressed(p, inp, 'dig');
+  const trapPress = pressed(p, inp, 'trap');
+  const buildPress = pressed(p, inp, 'build');
+  if (buildPress) {
+    // The build key opens the menu, and closes the menu or cancels a placement.
+    p.build = p.build === null && buildList(s).length ? { mode: 'menu', sel: p.lastSel } : null;
+    s.events.push({ type: p.build === null ? 'buildoff' : 'buildon', id: p.id });
+  }
+
+  // Build menu: you stand still; up/down (or the snare button) choose, dig picks.
+  if (p.build && p.build.mode === 'menu') {
+    const list = buildList(s);
+    if (!list.length) { p.build = null; return; }
+    const navY = (inp.y || 0) > 0.5 ? 1 : (inp.y || 0) < -0.5 ? -1 : 0;
+    const nav = navY !== p.navY ? navY : 0;
+    p.navY = navY;
+    let sel = p.build.sel % list.length;
+    if (nav) sel = (sel + nav + list.length) % list.length;
+    if (trapPress) sel = (sel + 1) % list.length;
+    p.build.sel = p.lastSel = sel;
+    p.moving = false;
+    p.digT = p.chopT = p.mineT = 0;
+    if (digPress) {
+      const b = list[sel];
+      if (!canAfford(s, b)) s.events.push({ type: 'cantafford', id: p.id, item: b.id });
+      else if (b.kind === 'place') p.build = { mode: 'place', id: b.id };
+      else { s.events.push({ type: act(s, p, b), id: p.id, item: b.id }); p.build = null; }
+    }
+    collectAndBank(s, p);
+    return;
+  }
+
   let mx = inp.x || 0, my = inp.y || 0;
   const len = Math.hypot(mx, my);
   if (len > 1) { mx /= len; my /= len; }
@@ -384,31 +418,20 @@ function updatePlayer(s, p, inp, dt) {
   if (p.slow > 0) speed *= 0.55;
   move(s.world, p, mx * speed * dt, my * speed * dt, CFG.pr);
 
-  const digPress = pressed(p, inp, 'dig');
-  const trapPress = pressed(p, inp, 'trap');
-  if (pressed(p, inp, 'build')) {
-    p.build = p.build === null && buildList(s).length ? 0 : null;
-    s.events.push({ type: p.build === null ? 'buildoff' : 'buildon', id: p.id });
-  }
   if (pressed(p, inp, 'attack')) attack(s, p);
 
-  // Build mode: trap cycles, dig builds. Nothing else uses those buttons meanwhile.
-  if (p.build !== null) {
-    const list = buildList(s);
-    if (!list.length) p.build = null;
-    else {
-      p.build %= list.length;
-      if (trapPress) p.build = (p.build + 1) % list.length;
-      if (digPress) {
-        const b = list[p.build];
-        const res = act(s, p, b);
-        s.events.push({ type: res, id: p.id, item: b.id });
-        if (res === 'built' && b.kind !== 'place' && b.kind !== 'use') p.build = Math.min(p.build, buildList(s).length - 1);
-      }
-      p.digT = p.chopT = p.mineT = 0;
-      collectAndBank(s, p);
-      return;
+  // Placing: walk to aim the ghost, dig puts it down, snare goes back to the menu.
+  if (p.build && p.build.mode === 'place') {
+    const b = buildById[p.build.id];
+    if (trapPress) p.build = { mode: 'menu', sel: p.lastSel };
+    else if (digPress) {
+      const res = act(s, p, b);
+      s.events.push({ type: res, id: p.id, item: b.id });
+      if (res === 'built') p.build = null;
     }
+    p.digT = p.chopT = p.mineT = 0;
+    collectAndBank(s, p);
+    return;
   }
 
   // The dig button: revive a partner, else dig a site, else chop a tree, else mine a rock.

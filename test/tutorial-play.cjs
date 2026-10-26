@@ -59,15 +59,18 @@ async function waitFor(page, fn, timeout = 8000) {
     await page.waitForTimeout(150);
     if (await step() !== 'build') throw new Error(`expected build, got ${await step()}`);
     await page.evaluate(() => { const s = window.__digsite.run, p = s.players[0]; p.x = s.world.camp.x; p.y = s.world.camp.y + 90; p.fx = 0; p.fy = 1; });
-    await page.keyboard.press('KeyB'); await page.waitForTimeout(60);
-    for (let i = 0; i < 10 && (await page.evaluate(() => window.__digsite.buildName())) !== 'wall'; i++) { await page.keyboard.press('KeyQ'); await page.waitForTimeout(60); }
+    const choose = async (id) => {
+      await page.keyboard.press('KeyB'); await page.waitForTimeout(60);
+      for (let i = 0; i < 10 && (await page.evaluate(() => window.__digsite.buildName())) !== id; i++) { await page.keyboard.press('KeyS'); await page.waitForTimeout(60); }
+      await page.keyboard.press('KeyE'); await page.waitForTimeout(80);
+    };
+    await choose('wall');
+    if (await page.evaluate(() => window.__digsite.buildMode) !== 'place') throw new Error('choosing the wall did not start placement');
     if (shots) await page.screenshot({ path: path.join(shots, 'tut-build.png') });
     await page.keyboard.press('KeyE'); await page.waitForTimeout(100);
     if (await step() !== 'craft') throw new Error(`expected craft, got ${await step()}`);
-    for (let i = 0; i < 10 && (await page.evaluate(() => window.__digsite.buildName())) !== 'spear'; i++) { await page.keyboard.press('KeyQ'); await page.waitForTimeout(60); }
-    await page.keyboard.press('KeyE'); await page.waitForTimeout(100);
+    await choose('spear');
     if (await step() !== 'attack') throw new Error(`expected attack, got ${await step()}`);
-    await page.keyboard.press('KeyB'); await page.waitForTimeout(60);
     await page.keyboard.press('KeyF'); await page.waitForTimeout(100);
     if (await step() !== 'trap') throw new Error(`expected trap, got ${await step()}`);
     await page.keyboard.press('KeyQ');

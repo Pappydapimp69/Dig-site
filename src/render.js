@@ -617,7 +617,7 @@ export function makeRenderer(cv) {
     });
 
     // Messages sit above any open build bars.
-    let ty = H - 14 - s.players.filter((p) => p.build !== null && !p.down).length * 54;
+    let ty = H - 14 - s.players.filter((p) => p.build && p.build.mode === 'place' && !p.down).length * 18;
     for (let i = toasts.length - 1; i >= 0; i--) {
       const m = toasts[i];
       const w = textWidth(m.msg) + 10;
@@ -754,46 +754,58 @@ export function makeRenderer(cv) {
 
   const costText = (cost) => Object.entries(cost).map(([k, n]) => `${n} ${k.toUpperCase()}`).join(' ');
 
-  // Build mode: a ghost on the target tile, and a hotbar for each builder.
+  // Build menu (a list to choose from), then a ghost on the target tile only
+  // once you've picked something to place.
   function drawBuild(s, device) {
     let row = 0;
     for (const p of s.players) {
-      if (p.build === null || p.down) continue;
-      const list = buildList(s);
-      const b = list[p.build];
-      if (!b) continue;
-      const afford = canAfford(s, b);
-      if (b.kind === 'place') {
+      if (!p.build || p.down) continue;
+      const tag = s.players.length > 1 ? `P${p.id + 1} ` : '';
+      if (p.build.mode === 'place') {
+        const b = buildById[p.build.id];
         const tg = buildTarget(s, p);
-        const ok = afford && (tg.ok || b.id === 'snare');
+        const ok = canAfford(s, b) && (tg.ok || b.id === 'snare');
         const x = tg.x / 2 - cam.x, y = tg.y / 2 - cam.y;
         ctx.globalAlpha = 0.55 + Math.sin(s.time * 8) * 0.15;
-        const img = b.id === 'snare' ? art.trap : b.id === 'torch' ? art.torch[0] : art.struct[b.id];
+        const img = buildIcon(b.id);
         if (b.id === 'snare') blit(img, x - 5, y - 3);
         else if (b.id === 'torch') blit(img, x - 4, y - 14);
         else blit(img, x - img.width / 2, y + 9 - img.height);
         ctx.globalAlpha = 1;
         ctx.strokeStyle = ok ? '#7dff8a' : '#ff4a3a';
         ctx.strokeRect(Math.round(x - 8) + 0.5, Math.round(y - 8) + 0.5, 15, 15);
+        const hint = device === 'touch' ? `${tag}PLACE ${b.name.toUpperCase()}: PLACE / BACK / CANCEL`
+          : `${tag}${keyName('place', device)} PLACE ${b.name}   ${keyName('next', device)} BACK   ${keyName('build', device)} CANCEL`;
+        const w = textWidth(hint) + 12, by = H - 30 - row * 18;
+        panel(Math.round(W / 2 - w / 2), by, w, 13);
+        drawText(ctx, hint, W / 2, by + 3, { align: 'center', color: ok ? '#f4ead2' : '#ff8a7a' });
+        row++;
+        continue;
       }
-      // Hotbar.
-      const w = list.length * 14 + 6;
-      const bx = Math.round(W / 2 - Math.max(w, 200) / 2), by = H - 58 - row * 54;
-      panel(bx, by, Math.max(w, 200), 50);
+      // The menu.
+      const list = buildList(s);
+      const sel = p.build.sel % list.length;
+      const mw = 220, mh = 30 + list.length * 12;
+      const mx = s.players.length > 1 ? (p.id === 0 ? 10 : W - mw - 10) : Math.round(W / 2 - mw / 2);
+      const my = Math.round(H / 2 - mh / 2);
+      panel(mx, my, mw, mh);
+      drawText(ctx, `${tag}BUILD`, mx + 6, my + 5, { color: '#ffe08a' });
+      drawText(ctx, `WOOD ${s.stock.wood}  STONE ${s.stock.stone}`, mx + mw - 6, my + 5, { align: 'right', color: '#b8c8a0' });
       list.forEach((it, i) => {
-        const ix = bx + 4 + i * 14;
-        if (i === p.build) { ctx.fillStyle = 'rgba(255,224,138,0.35)'; ctx.fillRect(ix - 1, by + 3, 14, 14); }
+        const y = my + 17 + i * 12;
+        const afford = canAfford(s, it);
+        if (i === sel) { ctx.fillStyle = 'rgba(255,224,138,0.22)'; ctx.fillRect(mx + 3, y - 2, mw - 6, 11); }
         const icon = buildIcon(it.id);
-        ctx.globalAlpha = canAfford(s, it) ? 1 : 0.4;
-        ctx.drawImage(icon, 0, 0, icon.width, icon.height, ix, by + 4, 12, Math.round(12 * icon.height / icon.width) > 12 ? 12 : Math.round(12 * icon.height / icon.width));
-        ctx.globalAlpha = 1;
+        const ih = Math.min(9, icon.height), iw = Math.round(icon.width * ih / icon.height);
+        ctx.drawImage(icon, mx + 6 + Math.round((10 - iw) / 2), y - 1, iw, ih);
+        drawText(ctx, it.name, mx + 19, y, { color: i === sel ? '#ffe08a' : afford ? '#f4ead2' : '#8a8070' });
+        drawText(ctx, costText(it.cost), mx + mw - 6, y, { align: 'right', color: afford ? '#7dff8a' : '#ff8a7a' });
       });
-      drawText(ctx, `${s.players.length > 1 ? `P${p.id + 1} ` : ''}${b.name}`, bx + 4, by + 20, { color: '#ffe08a' });
-      drawText(ctx, costText(b.cost), bx + Math.max(w, 200) - 4, by + 20, { align: 'right', color: afford ? '#7dff8a' : '#ff8a7a' });
-      drawText(ctx, b.desc, bx + 4, by + 30, { color: '#b8c8a0', shadow: null });
-      const hint = `${keyName('next', device)} NEXT  ${keyName('place', device)} ${b.kind === 'place' ? 'BUILD' : b.kind === 'use' ? 'USE' : 'CRAFT'}  ${keyName('build', device)} DONE`;
-      drawText(ctx, device === 'touch' ? 'NEXT / PLACE / DONE BUTTONS' : hint, bx + 4, by + 40, { color: '#8a8070', shadow: null });
-      row++;
+      const cur = list[sel];
+      const verb = cur.kind === 'place' ? 'CHOOSE' : cur.kind === 'use' ? 'USE' : 'CRAFT';
+      drawText(ctx, cur.desc, mx + 6, my + mh - 11, { color: '#b8c8a0', shadow: null });
+      const hint = device === 'touch' ? 'STICK UP/DOWN, THEN CHOOSE' : `${keyName('choose', device)} SELECT   ${keyName('place', device)} ${verb}   ${keyName('build', device)} CLOSE`;
+      drawText(ctx, hint, mx + mw / 2, my + mh + 4, { align: 'center', color: '#f4ead2' });
     }
   }
 

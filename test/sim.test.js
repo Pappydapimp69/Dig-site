@@ -461,14 +461,40 @@ function builder(extra = {}) {
   s.stock = { wood: 50, stone: 50 };
   return s;
 }
-// Open build mode, cycle to an item, and press dig once.
+// Open the build menu, move down to an item, pick it, and (for placeables) put it down.
 function buildItem(s, id, p = s.players[0]) {
   const press = (inp) => { update(s, [inp], STEP); update(s, [{}], STEP); };
   if (p.build === null) press({ build: true });
-  for (let i = 0; i < 20 && buildList(s)[p.build].id !== id; i++) press({ trap: true });
-  assert.equal(buildList(s)[p.build].id, id);
+  assert.equal(p.build.mode, 'menu');
+  for (let i = 0; i < 20 && buildList(s)[p.build.sel].id !== id; i++) press({ y: 1 });
+  assert.equal(buildList(s)[p.build.sel].id, id);
   press({ dig: true });
+  if (p.build && p.build.mode === 'place') press({ dig: true });
 }
+
+test('the build menu: choosing a wall shows a ghost, not before; moving is frozen in the menu', () => {
+  const s = builder();
+  const p = s.players[0];
+  Object.assign(p, openSpot(s, 300), { fx: 1, fy: 0 });
+  const x0 = p.x;
+  update(s, [{ build: true }], STEP); update(s, [{}], STEP);
+  assert.equal(p.build.mode, 'menu');
+  run(s, 0.3, [{ x: 1 }]);
+  assert.equal(p.x, x0, 'frozen while choosing');
+  while (buildList(s)[p.build.sel].id !== 'wall') { update(s, [{ y: 1 }], STEP); update(s, [{}], STEP); }
+  update(s, [{ dig: true }], STEP); update(s, [{}], STEP);
+  assert.deepEqual(p.build, { mode: 'place', id: 'wall' });
+  assert.equal(s.structures.length, 0, 'nothing built yet');
+  update(s, [{ trap: true }], STEP); update(s, [{}], STEP);
+  assert.equal(p.build.mode, 'menu', 'snare button goes back to the menu');
+  update(s, [{ dig: true }], STEP); update(s, [{}], STEP);
+  update(s, [{ dig: true }], STEP); update(s, [{}], STEP);
+  assert.equal(s.structures.length, 1);
+  assert.equal(p.build, null, 'placing closes build mode');
+  update(s, [{ build: true }], STEP); update(s, [{}], STEP);
+  update(s, [{ build: true }], STEP); update(s, [{}], STEP);
+  assert.equal(p.build, null, 'build key closes the menu');
+});
 
 test('mine stone from rocks and stock it at camp; a pickaxe mines twice as fast', () => {
   const s = newRun({ trait: 'none', seed: 3 });

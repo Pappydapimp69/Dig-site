@@ -24,8 +24,8 @@ npm run serve        # then open http://127.0.0.1:8080
 
 - **Solo:** Space on the menu. WASD or arrows to move, E or Space to dig/chop/mine, Q or Shift for a snare, F to attack, B to build. Esc pauses; from the pause menu, L leaves the island (by day).
 - **Co-op:** Enter on the menu. P1: WASD, E, Q, F, B. P2: arrows, `.` dig, `,` snare, `/` attack, `;` build.
-- **Build mode:** B opens it. Q cycles items, E builds/crafts on the tile you face, B closes it. Materials come from the camp stock.
-- **Controllers:** left stick or D-pad to move, A (or RT) to dig/chop/mine/revive, X (or a bumper) for a snare, B to attack, Y to build (X next, A place), Start to pause; from pause, Y leaves the island and B quits. The menu works with the D-pad and A. In co-op with one controller, the keyboard is P1 and the controller is P2; with two controllers each gets a player. Controllers rumble when you're hit and when the rex roars.
+- **Build menu:** B opens it (you stand still while it's open). W/S choose, E picks, B closes. Tools, weapons and flares are made on the spot; for walls, torches and snares a ghost appears on the tile you face: E puts it down, Q goes back to the menu, B cancels. Materials come from the camp stock.
+- **Controllers:** left stick or D-pad to move, A (or RT) to dig/chop/mine/revive, X (or a bumper) for a snare, B to attack, Y for the build menu (D-pad to choose, A to pick/place, X back), Start to pause; from pause, Y leaves the island and B quits. The menu works with the D-pad and A. In co-op with one controller, the keyboard is P1 and the controller is P2; with two controllers each gets a player. Controllers rumble when you're hit and when the rex roars.
 - Menu: number keys 1-7 buy upgrades.
 
 ## Rules of the island

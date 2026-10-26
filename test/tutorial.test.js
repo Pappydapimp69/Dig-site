@@ -60,14 +60,19 @@ test('full walkthrough with real inputs completes the tutorial', () => {
   const p = s.players[0];
   Object.assign(p, { x: s.world.camp.x, y: s.world.camp.y + 90, fx: 0, fy: 1 });
   const tapIn = (inp) => { frame(s, tut, inp); frame(s, tut); };
-  tapIn({ build: true });
-  for (let i = 0; i < 10 && buildList(s)[p.build].id !== 'wall'; i++) tapIn({ trap: true });
+  const choose = (id) => {
+    tapIn({ build: true });
+    for (let i = 0; i < 10 && buildList(s)[p.build.sel].id !== id; i++) tapIn({ y: 1 });
+    tapIn({ dig: true });
+  };
+  choose('wall');
+  assert.equal(p.build.mode, 'place');
+  assert.match(tutorialHint(tut, s).tip, /PUT THE WALL/);
   tapIn({ dig: true });                                                // build
   assert.equal(currentStep(tut).id, 'craft');
-  for (let i = 0; i < 10 && buildList(s)[p.build].id !== 'spear'; i++) tapIn({ trap: true });
-  tapIn({ dig: true });                                                // craft
+  choose('spear');                                                     // craft
   assert.equal(currentStep(tut).id, 'attack');
-  tapIn({ build: true }); tapIn({ attack: true });                     // attack
+  tapIn({ attack: true });                                             // attack
   assert.equal(currentStep(tut).id, 'trap');
   frame(s, tut, { trap: true }); frame(s, tut);                        // trap
   assert.equal(currentStep(tut).id, 'dusk');

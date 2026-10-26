@@ -14,9 +14,9 @@ export const STEPS = [
   { id: 'stack', text: 'BRING THE WOOD TO CAMP. IT BURNS AT NIGHT.', tip: 'WOOD STACKED BY DAY FEEDS THE FIRE AT DUSK.' },
   { id: 'mine', text: 'HOLD {DIG} NEXT TO THE ROCKS TO MINE STONE.', tip: 'STAND BESIDE THE MARKED ROCK, AWAY FROM TREES.' },
   { id: 'stone', text: 'BRING THE STONE TO CAMP.', tip: 'WOOD AND STONE AT CAMP ARE WHAT YOU BUILD WITH.' },
-  { id: 'build', text: 'PRESS {BUILD}. PICK WOOD WALL WITH {NEXT}, PLACE IT WITH {PLACE}.', tip: 'THE WALL GOES ON THE TILE YOU ARE FACING.' },
-  { id: 'craft', text: 'IN BUILD MODE, PICK SPEAR AND PRESS {PLACE} TO CRAFT IT.', tip: 'MORE BUILDS UNLOCK AS YOU FILL MUSEUM REQUESTS.' },
-  { id: 'attack', text: 'CLOSE BUILD MODE WITH {BUILD}, THEN PRESS {ATTACK} TO SWING.', tip: 'HIT A DINOSAUR ENOUGH AND IT RUNS OFF.' },
+  { id: 'build', text: 'PRESS {BUILD} TO OPEN THE BUILD MENU. CHOOSE WOOD WALL WITH {CHOOSE} AND {PLACE}.', tip: '{BUILD} CLOSES THE MENU.' },
+  { id: 'craft', text: 'OPEN THE BUILD MENU AGAIN. CHOOSE SPEAR TO CRAFT IT.', tip: 'MORE BUILDS UNLOCK AS YOU FILL MUSEUM REQUESTS.' },
+  { id: 'attack', text: 'PRESS {ATTACK} TO SWING YOUR SPEAR.', tip: 'HIT A DINOSAUR ENOUGH AND IT RUNS OFF.' },
   { id: 'trap', text: 'PRESS {TRAP} TO SET A SNARE.', tip: 'A DINOSAUR THAT STEPS ON A SNARE IS STUNNED.' },
   { id: 'dusk', text: 'NIGHT IS COMING. GO BACK TO THE FIRE.', tip: 'DINOSAURS COME OUT AT NIGHT.' },
   { id: 'night', text: 'THE FIRE KEEPS RAPTORS AWAY UNTIL IT BURNS LOW. SURVIVE UNTIL DAWN.', tip: 'SPEAR IT WITH {ATTACK}, FEED THE FIRE, OR LURE IT ONTO YOUR SNARE.' },
@@ -127,7 +127,8 @@ export function tutorialHint(tut, s) {
   else if (step.id === 'chop' && s.world.sites.some((x) => x.bones > 0 && dist(x, p) < CFG.digR)) warn = 'TOO CLOSE TO A DIG SITE. USE THE MARKED TREE.';
   else if (step.id === 'dig' && p.moving && dist(p, tut.site) < CFG.digR) warn = 'STAND STILL TO DIG.';
   else if (step.id === 'mine' && p.carry.length >= s.st.cap) warn = 'YOUR BAG IS FULL. EMPTY IT AT CAMP FIRST.';
-  else if ((step.id === 'mine' || step.id === 'attack' || step.id === 'trap') && p.build !== null) warn = 'YOU ARE IN BUILD MODE. PRESS {BUILD} TO CLOSE IT.';
+  else if ((step.id === 'mine' || step.id === 'attack' || step.id === 'trap') && p.build !== null) warn = 'THE BUILD MENU IS OPEN. PRESS {BUILD} TO CLOSE IT.';
+  else if (step.id === 'build' && p.build && p.build.mode === 'place') warn = 'NOW PRESS {PLACE} TO PUT THE WALL IN THE OUTLINE.';
   return { text: step.text, tip: warn || (tut.t > TIP_AFTER ? step.tip : null), warn: !!warn, n: tut.i + 1, of: STEPS.length };
 }
 
