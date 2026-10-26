@@ -1,8 +1,8 @@
 import { newRun, update, finish } from './game.js';
 import { makeRenderer } from './render.js';
 import { makeInput } from './input.js';
-import { loadSave, writeSave, applyRun, buy } from './save.js';
-import { UPGRADES, speciesById } from './data.js';
+import { loadSave, writeSave, applyRun, buy, perks } from './save.js';
+import { UPGRADES, speciesById, CFG } from './data.js';
 import { SFX, unlockAudio } from './sfx.js';
 
 const STEP = 1 / 60;
@@ -22,7 +22,10 @@ let acc = 0;
 let last = performance.now();
 
 function start(players) {
-  run = newRun({ seed: (Math.random() * 2 ** 31) | 0, players, upgrades: save.upgrades });
+  run = newRun({
+    seed: (Math.random() * 2 ** 31) | 0, players, upgrades: save.upgrades,
+    perks: perks(save), tier: Math.min(save.wins, 6),
+  });
   screen = 'play';
   acc = 0;
 }
@@ -41,6 +44,13 @@ const EVENT_TEXT = {
   snap: () => 'Snare! Raptor stunned.',
   down: (e) => `P${e.id + 1} is down!`,
   revive: (e) => `P${e.id + 1} is back up`,
+  rexwarn: () => 'The ground is shaking...',
+  roar: () => 'THE REX SEES YOU. FREEZE!',
+  steal: () => 'A compy stole your loot! Tag it!',
+  escaped: () => 'The compy got away.',
+  amber: () => `Amber! Worth $${CFG.amberValue}.`,
+  contract: (e) => `Museum request filled! +$${e.bonus}`,
+  wood: (e) => (run.phase === 'night' ? 'The fire flares up.' : `Firewood stacked (${run.woodPile}).`),
 };
 
 function drainEvents() {

@@ -51,7 +51,7 @@ function flood(tiles, w, h, sx, sy) {
   return reach;
 }
 
-function tryWorld(rng, w, h) {
+function tryWorld(rng, w, h, { extraSites = 0, amberChance = 0 } = {}) {
   const n1 = valueNoise(rng, w, h, 10);
   const n2 = valueNoise(rng, w, h, 4);
   const veg = valueNoise(rng, w, h, 5);
@@ -87,22 +87,26 @@ function tryWorld(rng, w, h) {
 
   const sites = [];
   const candidates = open.filter((i) => tdist(i) > 8);
-  for (let tries = 0; tries < 2000 && sites.length < 14; tries++) {
+  const target = 14 + extraSites;
+  for (let tries = 0; tries < 3000 && sites.length < target; tries++) {
     const i = rng.pick(candidates);
     if (i === undefined) break;
     const x = ((i % w) + 0.5) * TILE, y = (((i / w) | 0) + 0.5) * TILE;
     if (sites.some((s) => Math.hypot(s.x - x, s.y - y) < TILE * 6)) continue;
-    sites.push({ x, y, species: pickSpecies(rng), bones: rng.int(2, 4) });
+    // Only draw from the rng when amber is possible, so amber-free islands
+    // generate exactly as before.
+    if (amberChance > 0 && rng() < amberChance) sites.push({ x, y, species: 'amber', bones: 1 });
+    else sites.push({ x, y, species: pickSpecies(rng), bones: rng.int(2, 4) });
   }
 
   const spawns = open.filter((i) => tdist(i) > 16);
   return { w, h, tiles, reach, camp, sites, spawns, openCount: open.length };
 }
 
-export function makeWorld(rng, w = 80, h = 60) {
+export function makeWorld(rng, w = 80, h = 60, opts = {}) {
   let world;
   for (let i = 0; i < 20; i++) {
-    world = tryWorld(rng, w, h);
+    world = tryWorld(rng, w, h, opts);
     if (world.openCount > 900 && world.sites.length >= 10 && world.spawns.length > 50) return world;
   }
   return world;
@@ -119,6 +123,21 @@ export const solidAt = (world, px, py) => SOLID.has(tileAt(world, px, py));
 export function blocked(world, x, y, r) {
   return solidAt(world, x - r, y - r) || solidAt(world, x + r, y - r) ||
     solidAt(world, x - r, y + r) || solidAt(world, x + r, y + r);
+}
+
+// Is there a tree tile within r of (x, y)? Returns its centre or null.
+export function treeNear(world, x, y, r) {
+  const tx0 = Math.floor((x - r) / TILE), tx1 = Math.floor((x + r) / TILE);
+  const ty0 = Math.floor((y - r) / TILE), ty1 = Math.floor((y + r) / TILE);
+  for (let ty = ty0; ty <= ty1; ty++) {
+    for (let tx = tx0; tx <= tx1; tx++) {
+      if (tx < 0 || ty < 0 || tx >= world.w || ty >= world.h) continue;
+      if (world.tiles[ty * world.w + tx] !== T.TREE) continue;
+      const cx = (tx + 0.5) * TILE, cy = (ty + 0.5) * TILE;
+      if (Math.hypot(cx - x, cy - y) < r + TILE / 2) return { x: cx, y: cy };
+    }
+  }
+  return null;
 }
 
 export function spawnPoint(world, rng) {

@@ -1,7 +1,7 @@
 // Pixel-art renderer. Draws at 480x300 and the page scales it up with
 // nearest-neighbour, so every pixel stays crisp. World units are 2x screen px.
 import { T, TILE } from './world.js';
-import { CFG, UPGRADES, speciesById, upgradeCost } from './data.js';
+import { CFG, UPGRADES, TRAITS, DINOS, speciesById, upgradeCost } from './data.js';
 import { collection } from './save.js';
 import { drawText, textWidth } from './art/font.js';
 import { buildTerrain, S } from './art/terrain.js';
@@ -20,7 +20,18 @@ export function makeRenderer(cv) {
   const art = {
     explorers: [SP.explorerSprites(0), SP.explorerSprites(1)],
     raptor: SP.raptorSprites(false),
-    raptorStun: SP.raptorSprites(true),
+    dinos: {
+      raptor: { normal: SP.raptorSprites(false), stun: SP.raptorSprites(true) },
+      compy: SP.compySprites(),
+      spitter: SP.spitterSprites(),
+      rex: SP.rexSprites(),
+    },
+    wood: SP.woodSprite(),
+    amber: SP.amberSprite(),
+    spit: SP.spitSprite(),
+    woodPile: [0, 1, 2, 3, 4].map((n) => SP.woodPileSprite(n)),
+    shadowHuge: SP.shadowSprite(34, 8),
+    shadowSmall: SP.shadowSprite(10, 4),
     trees: SP.treeSprites(),
     tent: SP.tentSprite(),
     crate: SP.crateSprite(),
@@ -39,7 +50,13 @@ export function makeRenderer(cv) {
     shadowBig: SP.shadowSprite(22, 6),
     tuft: SP.tuftSprite(),
   };
+  // Icon for anything that can be carried.
   const species = Object.fromEntries(Object.values(speciesById).map((s) => [s.id, SP.boneSprite(s.color)]));
+  species.amber = art.amber;
+  species.wood = art.wood;
+  const itemIcon = (it) => (it.mult > 1 && it.sp !== 'wood' && it.sp !== 'amber' ? art.boneGold : species[it.sp]);
+  for (const k of Object.keys(DINOS)) if (!art.dinos[k]) throw new Error(`no sprite for dino kind ${k}`);
+  const SHADOW = { raptor: 'shadowBig', compy: 'shadowSmall', spitter: 'shadowBig', rex: 'shadowHuge' };
 
   const dark = SP.canvas(W, H);
   const dctx = dark.getContext('2d');
@@ -79,7 +96,23 @@ export function makeRenderer(cv) {
     } else if (e.type === 'down') {
       shake = SHAKE_TIME * 1.5;
     } else if (e.type === 'snap') {
-      for (const r of s.raptors) if (r.stun > CFG.stunTime - 0.05) burst(r.x / 2, r.y / 2 - 4, 10, ['#d0d0c8', '#8a8a84'], 55, 0.4, 10);
+      for (const r of s.dinos) if (r.stun > 0) burst(r.x / 2, r.y / 2 - 4, 10, ['#d0d0c8', '#8a8a84'], 55, 0.4, 10);
+    } else if (e.type === 'amber' && p) {
+      burst(p.x / 2, p.y / 2 - 6, 16, ['#ffd27a', '#e88a1a', '#fff3b0'], 55, 0.8, 35);
+      floaters.push({ x: p.x / 2, y: p.y / 2 - 18, t: 1.2, text: 'AMBER!', color: '#ffb43d' });
+    } else if (e.type === 'chop' && p) {
+      burst(p.x / 2 + p.fx * 6, p.y / 2 - 6, 6, ['#d9b07a', '#8a5f36', '#3f8547'], 40, 0.4, 20);
+      floaters.push({ x: p.x / 2, y: p.y / 2 - 18, t: 0.8, text: '+WOOD', color: '#d9b07a' });
+    } else if (e.type === 'wood') {
+      burst(s.world.camp.x / 2, s.world.camp.y / 2, 12, ['#ffc53d', '#ff7a1a'], 35, 0.8, 40);
+    } else if (e.type === 'steal' && p) {
+      floaters.push({ x: p.x / 2, y: p.y / 2 - 18, t: 1, text: 'STOLEN!', color: '#ff6a5a' });
+    } else if (e.type === 'grab' && p) {
+      floaters.push({ x: p.x / 2, y: p.y / 2 - 18, t: 1, text: 'GOT IT!', color: '#7dff8a' });
+    } else if (e.type === 'roar') {
+      shake = SHAKE_TIME * 2.5;
+    } else if (e.type === 'contract') {
+      floaters.push({ x: s.world.camp.x / 2, y: s.world.camp.y / 2 - 30, t: 2, text: `REQUEST DONE +$${e.bonus}`, color: '#7dff8a' });
     } else if (e.type === 'revive' && p) {
       burst(p.x / 2, p.y / 2 - 6, 14, ['#7dff8a', '#d0ffd8'], 40, 0.6, 30);
     }
@@ -93,9 +126,10 @@ export function makeRenderer(cv) {
   };
 
   function darkness(s) {
-    if (s.phase === 'night') return DARK;
-    if (s.t > CFG.dayLen - 12) return DARK * (s.t - (CFG.dayLen - 12)) / 12;
-    if (s.night > 0 && s.t < 5) return DARK * (1 - s.t / 5);
+    const D = TRAITS[s.trait].dark || DARK;
+    if (s.phase === 'night') return D;
+    if (s.t > CFG.dayLen - 12) return D * (s.t - (CFG.dayLen - 12)) / 12;
+    if (s.night > 0 && s.t < 5) return D * (1 - s.t / 5);
     return 0;
   }
 
@@ -124,7 +158,7 @@ export function makeRenderer(cv) {
       for (let x = 0; x < W; x++) {
         const i = y * W + x;
         const b = BAYER[((y + camY) & 3) * 4 + ((x + camX) & 3)];
-        const q = Math.min(1, Math.floor(alphaBuf[i] * 4 + b) / 4) * a;
+        const q = Math.min(1, Math.floor((alphaBuf[i] / a) * 4 + b) / 4) * a;
         const o = i * 4;
         d[o] = 8; d[o + 1] = 10; d[o + 2] = 30; d[o + 3] = q * 255;
       }
@@ -192,6 +226,11 @@ export function makeRenderer(cv) {
       }
     }
     for (const t of s.traps) blit(art.trap, sx(t.x) - 5, sy(t.y) - 3);
+    for (const d of s.drops) {
+      const bob = Math.round(Math.sin(s.time * 4 + d.x) * 1);
+      blit(art.shadowSmall, sx(d.x) - 5, sy(d.y) - 1);
+      blit(itemIcon(d.item), sx(d.x) - 3, sy(d.y) - 5 + bob);
+    }
 
     // Fire safety ring, drawn as a dotted pixel circle.
     const cx = sx(w.camp.x), cy = sy(w.camp.y);
@@ -214,9 +253,9 @@ export function makeRenderer(cv) {
         items.push({ y: ty * S + 14, kind: 'tree', tx, ty });
       }
     }
-    items.push({ y: w.camp.y / 2 - 6, kind: 'tent' }, { y: w.camp.y / 2 - 10, kind: 'crate' }, { y: w.camp.y / 2 + 6, kind: 'fire' });
+    items.push({ y: w.camp.y / 2 - 6, kind: 'tent' }, { y: w.camp.y / 2 - 10, kind: 'crate' }, { y: w.camp.y / 2 + 6, kind: 'fire' }, { y: w.camp.y / 2 + 8, kind: 'pile' });
     for (const p of s.players) items.push({ y: p.y / 2, kind: 'player', p });
-    for (const r of s.raptors) items.push({ y: r.y / 2, kind: 'raptor', r });
+    for (const r of s.dinos) items.push({ y: r.y / 2, kind: 'dino', r });
     items.sort((a, b) => a.y - b.y);
 
     for (const it of items) {
@@ -238,8 +277,15 @@ export function makeRenderer(cv) {
         const h = Math.max(4, Math.round(img.height * (0.4 + 0.6 * f)));
         ctx.drawImage(img, 0, img.height - h, img.width, h, Math.round(cx - 5), Math.round(cy + 6 - h), img.width, h);
         if (Math.random() < dt * 8 * f) particles.push({ x: cx + (Math.random() - 0.5) * 4, y: cy - 4, vx: (Math.random() - 0.5) * 6, vy: -20 - Math.random() * 15, life: 0.8, color: Math.random() < 0.5 ? '#ffc53d' : '#ff7a1a', g: 0 });
+      } else if (it.kind === 'pile') {
+        if (s.woodPile > 0) blit(art.woodPile[Math.min(4, s.woodPile)], cx + 8, cy + 2);
       } else if (it.kind === 'player') drawPlayer(s, it.p, sx(it.p.x), sy(it.p.y), dt);
-      else drawRaptor(s, it.r, sx(it.r.x), sy(it.r.y), dt);
+      else drawDino(s, it.r, sx(it.r.x), sy(it.r.y), dt);
+    }
+
+    for (const b of s.spits) {
+      blit(art.spit, sx(b.x) - 1, sy(b.y) - 7);
+      if (Math.random() < 0.5) particles.push({ x: b.x / 2, y: b.y / 2 - 6, vx: 0, vy: 0, life: 0.25, color: '#5ea02a', g: 0 });
     }
 
     // Particles.
@@ -261,7 +307,9 @@ export function makeRenderer(cv) {
     const fireR = (s.phase === 'night' ? s.fire : s.st.fireR) / 2 + 26;
     const flick = 1 + Math.sin(s.time * 13) * 0.03;
     const lights = [{ x: cx, y: cy, r: fireR * flick }];
-    for (const p of s.players) if (!p.down) lights.push({ x: sx(p.x), y: sy(p.y) - 6, r: 52 });
+    const tr = TRAITS[s.trait];
+    const lantern = 52 * s.st.lantern * (tr.light || 1);
+    for (const p of s.players) if (!p.down) lights.push({ x: sx(p.x), y: sy(p.y) - 6, r: lantern });
     drawDark(a, lights, camX, camY);
     if (a > 0.2) {
       // Warm spill around the fire.
@@ -274,14 +322,30 @@ export function makeRenderer(cv) {
       ctx.globalCompositeOperation = 'source-over';
     }
 
+    drawWeather(s, camX, camY, dt);
+
+    // A better lantern lets you spot dig sites through the dark.
+    if (a > 0.3 && s.st.lantern > 1) {
+      const reach = 70 * s.st.lantern;
+      for (const site of w.sites) {
+        if (site.bones <= 0) continue;
+        const x = sx(site.x), y = sy(site.y);
+        if (!s.players.some((p) => !p.down && Math.hypot(sx(p.x) - x, sy(p.y) - y) < reach)) continue;
+        if (Math.floor(s.time * 2 + site.x) % 3 === 0) continue;
+        ctx.globalAlpha = 0.7;
+        blit(species[site.species], x - 3, y - 6);
+        ctx.globalAlpha = 1;
+      }
+    }
+
     // Things that must read through the dark.
-    for (const r of s.raptors) {
+    for (const r of s.dinos) {
       const x = sx(r.x), y = sy(r.y);
       const st = actor.get(r);
-      if (a > 0.3 && r.stun <= 0) {
+      if (a > 0.3 && r.stun <= 0 && st && st.eye) {
         const right = Math.cos(r.heading) >= 0;
         ctx.fillStyle = r.mode === 'chase' ? '#ff4a3a' : '#ffe14d';
-        ctx.fillRect(Math.round(x + (right ? 6 : -7)), Math.round(y - 15), 1, 1);
+        ctx.fillRect(Math.round(x + (right ? st.eye[0] : -st.eye[0] - 1)), Math.round(y + st.eye[1]), 1, 1);
       }
       if (st && st.alert > 0) {
         drawText(ctx, '!', x, y - 26 - Math.round((0.8 - st.alert) * 6), { color: '#ff4a3a', align: 'center' });
@@ -329,7 +393,12 @@ export function makeRenderer(cv) {
     blit(img, x - img.width / 2, y - img.height + 1 + bob);
     if (tileUnder(s, p) === T.TALL) blit(art.tuft, x - 6, y - 3);
     // Carried bones stack above the head.
-    p.carry.forEach((b, i) => blit(b.mult > 1 ? art.boneGold : species[b.sp], x - 3, y - img.height - 3 - i * 3));
+    p.carry.forEach((b, i) => blit(itemIcon(b), x - 3, y - img.height - 3 - i * 3));
+    if (p.chopT > 0) {
+      bar(x - 8, y - img.height - 6 - p.carry.length * 3, 16, p.chopT / CFG.chopTime, '#d9b07a');
+      if (Math.floor(s.time * 6) % 2) burst(x + cam.x + p.fx * 8, y + cam.y - 8, 1, ['#3f8547', '#5aa55a'], 20, 0.4, 10);
+    }
+    if (p.slow > 0 && Math.random() < 0.3) particles.push({ x: x + cam.x, y: y + cam.y - 6, vx: 0, vy: 10, life: 0.4, color: '#9ef04a', g: 0 });
     if (digging) {
       bar(x - 8, y - img.height - 6 - p.carry.length * 3, 16, p.digT / s.st.digTime, '#ffd84d');
       st.dust += dt;
@@ -341,18 +410,35 @@ export function makeRenderer(cv) {
   }
 
 
-  function drawRaptor(s, r, x, y, dt) {
+  // Eye pixel offsets (right-facing, from the dino's feet) for the night glint.
+  const EYES = { raptor: [5, -15], compy: [2, -8], spitter: [4, -14], rex: [7, -26] };
+
+  function drawDino(s, r, x, y, dt) {
     const st = anim(r, r.stun <= 0, dt);
     if (st.mode !== 'chase' && r.mode === 'chase') st.alert = 0.8;
     st.mode = r.mode;
     st.alert = Math.max(0, (st.alert || 0) - dt);
-    const set = r.stun > 0 ? art.raptorStun : art.raptor;
+    st.eye = EYES[r.kind];
+    const sets = art.dinos[r.kind];
+    const set = r.stun > 0 ? sets.stun : sets.normal;
     const dirSet = Math.cos(r.heading) >= 0 ? set.right : set.left;
-    const rate = r.mode === 'chase' ? 12 : 6;
+    const rate = r.kind === 'rex' ? 4 : r.mode === 'wander' ? 6 : 12;
     const img = dirSet[r.stun > 0 ? 0 : Math.floor(st.t * rate) % 2];
-    blit(art.shadowBig, x - 11, y - 3);
+    const sh = art[SHADOW[r.kind]];
+    blit(sh, x - sh.width / 2, y - sh.height / 2 - 1);
     blit(img, x - img.width / 2, y - img.height + 1);
-    if (r.mode === 'chase' && r.stun <= 0) {
+    if (r.carry) blit(itemIcon(r.carry), x - 3, y - img.height - 4);
+    if (r.kind === 'rex' && r.stun <= 0) {
+      // Footfalls you can feel.
+      st.step = (st.step || 0) + dt;
+      const near = s.players.some((p) => Math.hypot(p.x - r.x, p.y - r.y) < 500);
+      if (st.step > (r.mode === 'chase' ? 0.35 : 0.6)) {
+        st.step = 0;
+        if (near) shake = Math.max(shake, 0.08);
+        burst(x + cam.x, y + cam.y, 4, ['#8a7a5a', '#6a5a3a'], 25, 0.3, 5);
+      }
+    }
+    if (r.mode !== 'wander' && r.stun <= 0) {
       st.dust += dt;
       if (st.dust > 0.1) { st.dust = 0; particles.push({ x: x + cam.x, y: y + cam.y, vx: -Math.cos(r.heading) * 15, vy: -8, life: 0.3, color: '#b8a47a', g: 0 }); }
     }
@@ -362,6 +448,36 @@ export function makeRenderer(cv) {
     const tx = Math.floor(p.x / TILE), ty = Math.floor(p.y / TILE);
     return s.world.tiles[ty * s.world.w + tx];
   };
+
+  let rain = [];
+  function drawWeather(s, camX, camY, dt) {
+    const tr = s.trait;
+    if (tr === 'storm') {
+      ctx.fillStyle = 'rgba(20,30,60,0.18)';
+      ctx.fillRect(0, 0, W, H);
+      while (rain.length < 140) rain.push({ x: Math.random() * (W + 60), y: Math.random() * H, v: 260 + Math.random() * 80 });
+      ctx.fillStyle = 'rgba(170,200,240,0.55)';
+      for (const d of rain) {
+        d.y += d.v * dt;
+        d.x -= d.v * 0.3 * dt;
+        if (d.y > H) { d.y = -4; d.x = Math.random() * (W + 60); }
+        ctx.fillRect(Math.round(d.x), Math.round(d.y), 1, 3);
+      }
+      if (Math.sin(s.time * 0.7) > 0.995) { ctx.fillStyle = 'rgba(255,255,255,0.35)'; ctx.fillRect(0, 0, W, H); }
+    } else if (tr === 'foggy') {
+      for (let i = 0; i < 6; i++) {
+        const fx = ((i * 137 + s.time * (6 + i)) % (W + 200)) - 100 - (camX % 200);
+        const fy = (i * 61) % H;
+        const g = ctx.createRadialGradient(fx, fy, 5, fx, fy, 120);
+        g.addColorStop(0, 'rgba(210,220,225,0.22)');
+        g.addColorStop(1, 'rgba(210,220,225,0)');
+        ctx.fillStyle = g;
+        ctx.fillRect(fx - 120, fy - 120, 240, 240);
+      }
+      ctx.fillStyle = 'rgba(200,210,220,0.12)';
+      ctx.fillRect(0, 0, W, H);
+    }
+  }
 
   function bar(x, y, w, frac, color) {
     x = Math.round(x); y = Math.round(y);
@@ -386,18 +502,43 @@ export function makeRenderer(cv) {
     drawText(ctx, isNight ? `NIGHT ${s.night}/${CFG.nights}` : `DAY ${s.night + 1}`, 21, 9, { color: isNight ? '#b8c8ff' : '#ffe08a' });
     bar(9, 21, 98, 1 - s.t / len, isNight ? '#6c8cff' : '#ffc53d');
     drawText(ctx, `$${s.funding}`, 9, 27, { color: '#ffd84d' });
+    let hy = 42;
+    if (s.contract) {
+      const c = s.contract;
+      panel(4, hy, 108, 13);
+      blit(species[c.sp], 8, hy + 4);
+      drawText(ctx, c.done ? 'REQUEST DONE' : `WANT ${c.have}/${c.need}  +$${c.bonus}`, 18, hy + 3, { color: c.done ? '#7dff8a' : '#f4ead2' });
+      hy += 15;
+    }
+    if (s.woodPile > 0 && !isNight) {
+      panel(4, hy, 108, 13);
+      blit(art.wood, 8, hy + 5);
+      drawText(ctx, `FIREWOOD ${s.woodPile}/${CFG.maxWoodPile}`, 18, hy + 3, { color: '#d9b07a' });
+      hy += 15;
+    }
     if (isNight && s.fire <= CFG.fireSafeMin && Math.floor(s.time * 3) % 2) {
-      drawText(ctx, 'THE FIRE IS DYING!', 8, 44, { color: '#ff6a5a' });
+      drawText(ctx, 'THE FIRE IS DYING! BRING WOOD!', 8, hy + 2, { color: '#ff6a5a' });
+    }
+    // Island intro banner.
+    if (s.time < 4.5) {
+      const tr = TRAITS[s.trait];
+      const al = Math.min(1, (4.5 - s.time) * 2);
+      ctx.globalAlpha = al;
+      panel(W / 2 - 100, 92, 200, 44);
+      drawText(ctx, tr.name, W / 2, 98, { align: 'center', scale: 2, color: '#ffd38a' });
+      drawText(ctx, tr.desc, W / 2, 116, { align: 'center', color: '#b8c8a0' });
+      drawText(ctx, `EXPEDITION ${s.tier + 1}`, W / 2, 126, { align: 'center', color: '#7a8a70' });
+      ctx.globalAlpha = 1;
     }
 
     s.players.forEach((p, i) => {
       const x = W - 104, y = 4 + i * 36;
       panel(x, y, 100, 32);
       drawText(ctx, `P${i + 1}`, x + 4, y + 5, { color: P_COL[i] });
-      for (let h = 0; h < CFG.hp; h++) blit(h < p.hp ? art.heart : art.heartEmpty, x + 20 + h * 9, y + 5);
+      for (let h = 0; h < s.st.hp; h++) blit(h < p.hp ? art.heart : art.heartEmpty, x + 20 + h * 9, y + 5);
       for (let b = 0; b < s.st.cap; b++) {
         const item = p.carry[b];
-        blit(item ? (item.mult > 1 ? art.boneGold : art.bone) : art.boneEmpty, x + 5 + b * 9, y + 19);
+        blit(item ? itemIcon(item) : art.boneEmpty, x + 5 + b * 9, y + 19);
       }
       blit(art.trap, x + 72, y + 18);
       drawText(ctx, `${p.traps}`, x + 86, y + 19);
@@ -455,39 +596,42 @@ export function makeRenderer(cv) {
     drawText(ctx, 'DIG SITE', W / 2, 18, { scale: 4, align: 'center', color: '#ffd38a', shadow: '#5a2a10' });
     drawText(ctx, 'DIG BY DAY. SURVIVE THE NIGHT.', W / 2, 52, { align: 'center', color: '#b8c8a0' });
 
-    panel(14, 68, 232, 130);
-    drawText(ctx, 'UPGRADES', 22, 74, { color: '#ffe08a' });
-    drawText(ctx, `FUNDING $${save.funding}`, 238, 74, { align: 'right', color: '#ffd84d' });
+    panel(14, 64, 232, 150);
+    drawText(ctx, 'UPGRADES', 22, 69, { color: '#ffe08a' });
+    drawText(ctx, `FUNDING $${save.funding}`, 238, 69, { align: 'right', color: '#ffd84d' });
     UPGRADES.forEach((u, i) => {
       const lvl = save.upgrades[u.id] || 0;
       const maxed = lvl >= u.max;
       const cost = upgradeCost(u, lvl);
       const can = !maxed && save.funding >= cost;
-      const y = 90 + i * 21;
+      const y = 82 + i * 18;
       drawText(ctx, `${i + 1} ${u.name}`, 22, y, { color: can ? '#f4ead2' : '#8a8070' });
       for (let k = 0; k < u.max; k++) {
         ctx.fillStyle = k < lvl ? '#7dff8a' : '#3a3428';
         ctx.fillRect(150 + k * 6, y + 1, 4, 5);
       }
       drawText(ctx, maxed ? 'MAX' : `$${cost}`, 238, y, { align: 'right', color: can ? '#7dff8a' : '#8a8070' });
-      drawText(ctx, u.desc, 30, y + 9, { color: '#7a7262', shadow: null });
+      drawText(ctx, u.desc, 30, y + 8, { color: '#7a7262', shadow: null });
     });
 
-    panel(254, 68, 212, 130);
-    drawText(ctx, 'MUSEUM', 262, 74, { color: '#ffe08a' });
+    panel(254, 64, 212, 150);
+    drawText(ctx, 'MUSEUM', 262, 69, { color: '#ffe08a' });
+    drawText(ctx, 'SKELETON PERKS', 458, 69, { align: 'right', color: '#7a7262' });
     collection(save).forEach((c, i) => {
-      const y = 90 + i * 21;
+      const y = 84 + i * 24;
       blit(species[c.id], 262, y + 1);
       drawText(ctx, c.name, 273, y, { color: c.have ? '#f4ead2' : '#8a8070' });
-      bar(273, y + 10, 80, c.progress / c.bones, '#f4ead2');
-      drawText(ctx, `${c.skeletons} BUILT`, 458, y, { align: 'right', color: c.skeletons ? '#7dff8a' : '#8a8070' });
+      drawText(ctx, `${c.skeletons ? c.skeletons + 'X ' : ''}${c.progress}/${c.bones}`, 458, y, { align: 'right', color: c.skeletons ? '#7dff8a' : '#8a8070' });
+      bar(273, y + 10, 60, c.progress / c.bones, '#f4ead2');
+      drawText(ctx, c.perk, 458, y + 9, { align: 'right', color: c.skeletons ? '#7dff8a' : '#5a5448', shadow: null });
     });
 
     const pulse = Math.floor(time * 2) % 2 ? '#ffffff' : '#ffe08a';
-    drawText(ctx, 'SPACE  SOLO      ENTER  CO-OP', W / 2, 208, { align: 'center', color: pulse });
-    drawText(ctx, 'P1 WASD  E DIG  Q TRAP     P2 ARROWS  . DIG  , TRAP', W / 2, 222, { align: 'center', color: '#b8c8a0' });
-    drawText(ctx, `RUNS ${save.runs}   ISLANDS CLEARED ${save.wins}`, W / 2, 234, { align: 'center', color: '#7a8a70' });
-    if (msg) drawText(ctx, msg, W / 2, 196, { align: 'center', color: '#ff6a5a' });
+    drawText(ctx, `NEXT: EXPEDITION ${save.wins + 1}`, W / 2, 220, { align: 'center', color: '#ffd38a' });
+    drawText(ctx, 'SPACE  SOLO      ENTER  CO-OP', W / 2, 232, { align: 'center', color: pulse });
+    drawText(ctx, 'E DIG/CHOP  Q TRAP  (P2: . AND ,)', W / 2, 244, { align: 'center', color: '#b8c8a0' });
+    drawText(ctx, `RUNS ${save.runs}   ISLANDS CLEARED ${save.wins}`, W / 2, 256, { align: 'center', color: '#7a8a70' });
+    if (msg) drawText(ctx, msg, W / 2, 270, { align: 'center', color: '#ff6a5a' });
   }
 
   function drawSummary(s, time = 0) {
@@ -495,7 +639,7 @@ export function makeRenderer(cv) {
     const won = s.result === 'won';
     drawText(ctx, won ? 'ISLAND CLEARED' : 'THE NIGHT WON', W / 2, 40, { scale: 3, align: 'center', color: won ? '#7dff8a' : '#ff6a5a', shadow: '#14110c' });
     panel(W / 2 - 110, 76, 220, 40 + Object.keys(s.banked).length * 12);
-    drawText(ctx, `BONES BANKED  ${s.bankedCount}`, W / 2, 84, { align: 'center' });
+    drawText(ctx, `BONES BANKED  ${s.bankedCount}${s.amber ? `   AMBER ${s.amber}` : ''}`, W / 2, 84, { align: 'center' });
     drawText(ctx, `FUNDING  $${s.payout}${won ? `  (X${CFG.winBonus})` : ''}`, W / 2, 96, { align: 'center', color: '#ffd84d' });
     let y = 112;
     for (const [sp, n] of Object.entries(s.banked)) {

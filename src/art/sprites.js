@@ -263,3 +263,76 @@ export const tuftSprite = () => pix([
   'dldl.ldldldld',
   'ddddddddddddd',
 ], { l: '#6aa04a', d: '#2f5a24' });
+
+// ---------- more dinosaurs ----------
+function dinoSet(top, legs, pal, line) {
+  const right = legs.map((l) => outline(pix([...top, ...l], pal), line));
+  return { right, left: right.map(flipH) };
+}
+function withStun(build) {
+  return { normal: build(false), stun: build(true) };
+}
+const STUN_PAL = { G: '#c9b84a', D: '#8a7a28', B: '#e8e2a8', E: '#ffffff', F: '#e8d870', L: '#9a8a3a' };
+
+export const compySprites = () => withStun((stun) => dinoSet([
+  '........GG..',
+  '.......GEGG.',
+  'D.....GGG...',
+  '.DGGDGGG....',
+  '...BBBB.....',
+], [
+  ['...L..L.....', '..K..K......'],
+  ['....LL......', '....KK......'],
+], { G: '#c9a84a', D: '#8a6a28', B: '#efe2a8', E: '#1a1a1a', L: '#7a6028', K: '#2e2a20', ...(stun ? STUN_PAL : {}) }, '#1e1608'));
+
+export const spitterSprites = () => withStun((stun) => dinoSet([
+  '..............FF..',
+  '............FFGGG.',
+  '...........FFGEGGG',
+  'D...........GGGTT.',
+  'GD.........GGG....',
+  '.GDG.....GGGGGL...',
+  '..GDGDGGGGGGGGL...',
+  '....GGDGGDGGGG....',
+  '......BBBBBBB.....',
+], [
+  ['.......LL..LL.....', '......LL....LL....', '.....KK....KK.....'],
+  ['........LLL.......', '.......LL.L.......', '......KK..KK......'],
+], { G: '#4a9a8e', D: '#2a5e58', F: '#e8506e', B: '#cde6c4', E: '#ffe14d', T: '#f4f0e0', L: '#336e66', K: '#1e2a28', ...(stun ? STUN_PAL : {}) }, '#0e1e1c'));
+
+export const rexSprites = () => withStun((stun) => dinoSet([
+  '.......................GGGGGG.....',
+  '.....................GGGGGGGGGG...',
+  '.....................GGEGGGGGGGGG.',
+  '....................GGGGGGGGGGGGGG',
+  '....................GGGGGTTTTTTTT.',
+  '....................GGGG..T.T.T...',
+  '...................GGGGGGGGGG.....',
+  'D.................GGGGGGGG........',
+  'GD..............GGGGGGGGa.........',
+  '.GDG.........GGGGGGGGGGa..........',
+  '..GDGG....GGGGGGGGGGGGG...........',
+  '...GGDGGDGGGGDGGGDGGGGG...........',
+  '.....GGGDGGGGGGGGGGGGG............',
+  '.......GGBBBBBBBBBGGG.............',
+  '.........BBBBBBBBBG...............',
+], [
+  ['..........LLLL..LLLL..............', '..........LLL....LLL..............', '...........LL.....LL..............', '...........LL.....LL..............', '..........KKK....KKK..............'],
+  ['...........LLLLLLLL...............', '............LLL.LL................', '............LL..LL................', '...........LL...LL................', '..........KKK..KKK................'],
+], { G: '#7a6040', D: '#4a3a28', B: '#c8b08a', E: '#ff3a2a', T: '#f4f0e0', a: '#5a4630', L: '#5a4630', K: '#2a2018', ...(stun ? STUN_PAL : {}) }, '#140e08'));
+
+export const woodSprite = () => pix(['.wwwww.', 'wWwwwwo', '.wwwww.'], { w: '#8a5f36', W: '#6e4a2a', o: '#d9b07a' });
+
+export const amberSprite = () => outline(pix(['.aa.', 'aAaa', 'aaAa', '.aa.'], { a: '#e88a1a', A: '#ffd27a' }), '#4a2408');
+
+export const spitSprite = () => pix(['.g.', 'ggg', '.g.'], { g: '#9ef04a' });
+
+export const woodPileSprite = (n) => gen(14, 8, (x, y) => {
+  const rows = Math.min(n, 4);
+  const layer = Math.floor((7 - y) / 2);
+  if (layer >= rows || y > 7) return null;
+  const off = layer % 2 ? 2 : 0;
+  if (x < off || x > 13 - (layer % 2 ? 2 : 0)) return null;
+  if ((x - off) % 5 === 4) return '#d9b07a';
+  return y % 2 ? '#6e4a2a' : '#8a5f36';
+});

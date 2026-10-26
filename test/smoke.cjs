@@ -42,7 +42,7 @@ async function waitFor(page, fn, timeout = 5000) {
     await page.evaluate(() => {
       const d = window.__digsite;
       d.step(76);
-      d.run.raptors.forEach((r, i) => { r.x = d.run.players[0].x + 120 + i * 30; r.y = d.run.players[0].y - 60; });
+      d.run.dinos.forEach((r, i) => { r.x = d.run.players[0].x + 120 + i * 30; r.y = d.run.players[0].y - 60; });
       d.step(20);
     });
     await page.waitForTimeout(200);

@@ -54,8 +54,11 @@ export function buy(save, id) {
   return { ok: true, save: out };
 }
 
+// Each species with at least one finished skeleton grants its perk.
+export const perks = (save) => collection(save).filter((c) => c.skeletons > 0).map((c) => c.id);
+
 export function collection(save) {
-  return SPECIES.map((s) => {
+  return SPECIES.filter((s) => !s.treasure).map((s) => {
     const have = save.museum[s.id] || 0;
     return { ...s, have, skeletons: Math.floor(have / s.bones), progress: have % s.bones };
   });
