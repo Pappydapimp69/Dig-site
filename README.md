@@ -36,6 +36,9 @@ npm run serve        # then open http://127.0.0.1:8080
 - **Dilophosaurus** - from night 2. Spits venom from range that hurts and slows you.
 - **Tyrannosaurus** - the last night. Bites for 2 and shrugs off snares fast, but it only sees you when you move. Freeze.
 
+**Crafting tables**
+- Tools, weapons and flares are crafted while standing at a table. A **Workbench** (4 wood) makes the axe and spear; a **Stone Workshop** (3 wood, 4 stone, unlocks with the pickaxe) makes the pickaxe, sling and flare. Walls, torches and snares need no table.
+
 **Everything else**
 - Hold dig next to a tree to chop wood. Wood brought to camp by day is stacked and burned at dusk; wood brought at night keeps the fire alive.
 - Every island has a trait: Foggy, Full Moon, Storm, Bone Yard or Amber Coast.

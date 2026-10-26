@@ -104,6 +104,17 @@ export function buildList(s) {
 
 export const canAfford = (s, b) => Object.entries(b.cost).every(([k, n]) => (s.stock[k] || 0) >= n);
 
+// Best crafting table level within reach of this player (0 = none).
+export function stationLevel(s, p) {
+  let lvl = 0;
+  for (const st of s.structures) {
+    const b = buildById[st.kind];
+    if (b.station && b.station > lvl && dist(st, p) < CFG.stationR) lvl = b.station;
+  }
+  return lvl;
+}
+export const hasStation = (s, p, b) => !b.needs || stationLevel(s, p) >= b.needs;
+
 // The tile in front of the player, and whether a structure can go there.
 export function buildTarget(s, p) {
   // Always the neighbouring tile in the facing direction (8-way), never the
@@ -150,6 +161,7 @@ function wallHit(s, x, y, r) {
 
 // Building, crafting and using all go through here. Returns an event type.
 function act(s, p, b) {
+  if (!hasStation(s, p, b)) return 'needstation';
   if (!canAfford(s, b)) return 'cantafford';
   if (b.kind === 'place') {
     const tg = buildTarget(s, p);
@@ -404,7 +416,8 @@ function updatePlayer(s, p, inp, dt) {
     p.digT = p.chopT = p.mineT = 0;
     if (digPress) {
       const b = list[sel];
-      if (!canAfford(s, b)) s.events.push({ type: 'cantafford', id: p.id, item: b.id });
+      if (!hasStation(s, p, b)) s.events.push({ type: 'needstation', id: p.id, item: b.id });
+      else if (!canAfford(s, b)) s.events.push({ type: 'cantafford', id: p.id, item: b.id });
       else if (b.kind === 'place') p.build = { mode: 'place', id: b.id };
       else { s.events.push({ type: act(s, p, b), id: p.id, item: b.id }); p.build = null; }
     }

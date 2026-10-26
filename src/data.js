@@ -51,6 +51,7 @@ export const CFG = {
   structR: 13,       // how much of a tile a wall blocks
   torchR: 55,        // torches scare dinosaurs this close
   torchLife: 100,    // seconds of night a torch burns
+  stationR: 64,      // stand this close to a crafting table to use it
 };
 
 // One shared AI with per-kind stats (see game.js updateDino).
@@ -98,16 +99,21 @@ export const upgradeCost = (u, lvl) => u.base * (lvl + 1);
 // Things you build or craft during a run from the camp's wood and stone.
 // Each unlocks permanently after filling that many museum requests.
 // kind: place (put on the tile you face), tool/weapon (crafted once per run), use (consumed on the spot).
+// station: this structure is a crafting table of that level. needs: crafting
+// it requires standing at a table of at least that level.
+export const STATIONS = { 1: 'Workbench', 2: 'Stone Workshop' };
 export const BUILDS = [
+  { id: 'workbench', name: 'Workbench', kind: 'place', cost: { wood: 4 }, unlock: 0, hp: 20, solid: true, station: 1, desc: 'craft axes and spears here' },
   { id: 'snare', name: 'Snare', kind: 'place', cost: { wood: 1 }, unlock: 0, desc: 'stuns a dinosaur' },
   { id: 'torch', name: 'Torch', kind: 'place', cost: { wood: 1 }, unlock: 0, desc: 'light that scares dinosaurs' },
-  { id: 'axe', name: 'Axe', kind: 'tool', cost: { wood: 2, stone: 1 }, unlock: 1, desc: 'chop twice as fast' },
+  { id: 'axe', name: 'Axe', kind: 'tool', cost: { wood: 2, stone: 1 }, unlock: 1, needs: 1, desc: 'chop twice as fast' },
   { id: 'wall', name: 'Wood Wall', kind: 'place', cost: { wood: 2 }, unlock: 2, hp: 12, solid: true, desc: 'blocks dinosaurs' },
-  { id: 'spear', name: 'Spear', kind: 'weapon', cost: { wood: 2, stone: 1 }, unlock: 3, desc: 'hit and knock back' },
-  { id: 'pickaxe', name: 'Pickaxe', kind: 'tool', cost: { wood: 1, stone: 2 }, unlock: 4, desc: 'mine twice as fast' },
+  { id: 'spear', name: 'Spear', kind: 'weapon', cost: { wood: 2, stone: 1 }, unlock: 3, needs: 1, desc: 'hit and knock back' },
+  { id: 'workshop', name: 'Stone Workshop', kind: 'place', cost: { wood: 3, stone: 4 }, unlock: 4, hp: 40, solid: true, station: 2, desc: 'craft advanced gear here' },
+  { id: 'pickaxe', name: 'Pickaxe', kind: 'tool', cost: { wood: 1, stone: 2 }, unlock: 4, needs: 2, desc: 'mine twice as fast' },
   { id: 'spikes', name: 'Spike Wall', kind: 'place', cost: { wood: 3, stone: 1 }, unlock: 5, hp: 16, solid: true, spikes: 1, desc: 'hurts what attacks it' },
-  { id: 'sling', name: 'Sling', kind: 'weapon', cost: { wood: 1, stone: 1 }, unlock: 6, desc: 'stun from range (uses stone)' },
-  { id: 'flare', name: 'Flare', kind: 'use', cost: { wood: 1, stone: 1 }, unlock: 7, scareR: 170, time: 6, desc: 'scares off everything nearby' },
+  { id: 'sling', name: 'Sling', kind: 'weapon', cost: { wood: 1, stone: 1 }, unlock: 6, needs: 2, desc: 'stun from range (uses stone)' },
+  { id: 'flare', name: 'Flare', kind: 'use', cost: { wood: 1, stone: 1 }, unlock: 7, needs: 2, scareR: 170, time: 6, desc: 'scares off everything nearby' },
   { id: 'stonewall', name: 'Stone Wall', kind: 'place', cost: { stone: 3 }, unlock: 8, hp: 40, solid: true, desc: 'a much tougher wall' },
 ];
 export const buildById = Object.fromEntries(BUILDS.map((b) => [b.id, b]));

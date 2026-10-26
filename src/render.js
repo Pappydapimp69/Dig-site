@@ -1,8 +1,8 @@
 // Pixel-art renderer. Draws at 480x300 and the page scales it up with
 // nearest-neighbour, so every pixel stays crisp. World units are 2x screen px.
 import { T, TILE } from './world.js';
-import { CFG, UPGRADES, TRAITS, DINOS, BUILDS, buildById, nextUnlock, speciesById, upgradeCost } from './data.js';
-import { buildList, buildTarget, canAfford, tierFor } from './game.js';
+import { CFG, UPGRADES, TRAITS, DINOS, BUILDS, STATIONS, buildById, nextUnlock, speciesById, upgradeCost } from './data.js';
+import { buildList, buildTarget, canAfford, hasStation, tierFor } from './game.js';
 import { collection } from './save.js';
 import { drawText, textWidth } from './art/font.js';
 import { keyName, fillKeys } from './keys.js';
@@ -32,7 +32,7 @@ export function makeRenderer(cv) {
     amber: SP.amberSprite(),
     spit: SP.spitSprite(),
     woodPile: [0, 1, 2, 3, 4].map((n) => SP.woodPileSprite(n)),
-    struct: { wall: SP.wallSprite(), spikes: SP.spikeSprite(), stonewall: SP.stoneWallSprite() },
+    struct: { wall: SP.wallSprite(), spikes: SP.spikeSprite(), stonewall: SP.stoneWallSprite(), workbench: SP.workbenchSprite(), workshop: SP.workshopSprite() },
     torch: SP.torchFrames(),
     stone: SP.stoneSprite(),
     icons: SP.iconSprites(),
@@ -62,7 +62,7 @@ export function makeRenderer(cv) {
   species.wood = art.wood;
   species.stone = art.stone;
   // Icon and world sprite for each build.
-  const buildIcon = (id) => ({ snare: art.trap, torch: art.torch[0], wall: art.struct.wall, spikes: art.struct.spikes, stonewall: art.struct.stonewall }[id] || art.icons[id]);
+  const buildIcon = (id) => (id === 'snare' ? art.trap : id === 'torch' ? art.torch[0] : art.struct[id] || art.icons[id]);
   for (const b of BUILDS) if (!buildIcon(b.id)) throw new Error(`no icon for build ${b.id}`);
   const itemIcon = (it) => (it.mult > 1 && species[it.sp] && speciesById[it.sp] && it.sp !== 'amber' ? art.boneGold : species[it.sp]);
   for (const k of Object.keys(DINOS)) if (!art.dinos[k]) throw new Error(`no sprite for dino kind ${k}`);
@@ -132,6 +132,8 @@ export function makeRenderer(cv) {
     } else if (e.type === 'cantafford' && p) {
       const b = buildById[e.item];
       floaters.push({ x: p.x / 2, y: p.y / 2 - 18, t: 1, text: `NEED ${costText(b.cost)}`, color: '#ff8a7a' });
+    } else if (e.type === 'needstation' && p) {
+      floaters.push({ x: p.x / 2, y: p.y / 2 - 18, t: 1.4, text: `NEEDS A ${STATIONS[buildById[e.item].needs].toUpperCase()}`, color: '#ff8a7a' });
     } else if (e.type === 'cantbuild' && p) {
       floaters.push({ x: p.x / 2, y: p.y / 2 - 18, t: 1, text: "CAN'T BUILD THERE", color: '#ff8a7a' });
     } else if (e.type === 'hit') {
@@ -810,17 +812,18 @@ export function makeRenderer(cv) {
       drawText(ctx, `WOOD ${s.stock.wood}  STONE ${s.stock.stone}`, mx + mw - 6, my + 5, { align: 'right', color: '#b8c8a0' });
       list.forEach((it, i) => {
         const y = my + 17 + i * 12;
-        const afford = canAfford(s, it);
+        const afford = canAfford(s, it) && hasStation(s, p, it);
         if (i === sel) { ctx.fillStyle = 'rgba(255,224,138,0.22)'; ctx.fillRect(mx + 3, y - 2, mw - 6, 11); }
         const icon = buildIcon(it.id);
         const ih = Math.min(9, icon.height), iw = Math.round(icon.width * ih / icon.height);
         ctx.drawImage(icon, mx + 6 + Math.round((10 - iw) / 2), y - 1, iw, ih);
         drawText(ctx, it.name, mx + 19, y, { color: i === sel ? '#ffe08a' : afford ? '#f4ead2' : '#8a8070' });
-        drawText(ctx, costText(it.cost), mx + mw - 6, y, { align: 'right', color: afford ? '#7dff8a' : '#ff8a7a' });
+        const needTable = !hasStation(s, p, it);
+        drawText(ctx, needTable ? `AT ${STATIONS[it.needs].toUpperCase()}` : costText(it.cost), mx + mw - 6, y, { align: 'right', color: needTable ? '#c8a050' : canAfford(s, it) ? '#7dff8a' : '#ff8a7a' });
       });
       const cur = list[sel];
       const verb = cur.kind === 'place' ? 'CHOOSE' : cur.kind === 'use' ? 'USE' : 'CRAFT';
-      drawText(ctx, cur.desc, mx + 6, my + mh - 11, { color: '#b8c8a0', shadow: null });
+      drawText(ctx, cur.needs && !hasStation(s, p, cur) ? `${costText(cur.cost)} - STAND AT A ${STATIONS[cur.needs].toUpperCase()}` : cur.desc, mx + 6, my + mh - 11, { color: '#b8c8a0', shadow: null });
       const hint = device === 'touch' ? 'STICK UP/DOWN, THEN CHOOSE' : `${keyName('choose', device)} SELECT   ${keyName('place', device)} ${verb}   ${keyName('build', device)} CLOSE`;
       drawText(ctx, hint, mx + mw / 2, my + mh + 4, { align: 'center', color: '#f4ead2' });
     }

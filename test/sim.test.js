@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { newRun, update, nightRoster, stats, leave, buildList, buildTarget, tierFor } from '../src/game.js';
+import { newRun, update, nightRoster, stats, leave, buildList, buildTarget, tierFor, stationLevel } from '../src/game.js';
 import { blocked, treeNear, TILE, T } from '../src/world.js';
 import { CFG, DINOS, TRAITS, TRAIT_POOL } from '../src/data.js';
 import { freshSave, applyRun, buy, loadSave, collection, perks } from '../src/save.js';
@@ -461,6 +461,15 @@ function builder(extra = {}) {
   s.stock = { wood: 50, stone: 50 };
   return s;
 }
+// Put a crafting table of this level right next to the player.
+function tableAt(s, p, kind = 'workshop') {
+  const tx = Math.floor(p.x / TILE) - 1, ty = Math.floor(p.y / TILE);
+  const st = { kind, tx, ty, x: (tx + 0.5) * TILE, y: (ty + 0.5) * TILE, hp: 40, maxHp: 40, solid: true, life: 0 };
+  s.structures.push(st);
+  s.structAt.set(ty * s.world.w + tx, st);
+  return st;
+}
+
 // Open the build menu, move down to an item, pick it, and (for placeables) put it down.
 function buildItem(s, id, p = s.players[0]) {
   const press = (inp) => { update(s, [inp], STEP); update(s, [{}], STEP); };
@@ -513,9 +522,10 @@ test('mine stone from rocks and stock it at camp; a pickaxe mines twice as fast'
 
 test('builds unlock with requests filled; tools and weapons craft once', () => {
   const fresh = newRun({ trait: 'none', seed: 3 });
-  assert.deepEqual(buildList(fresh).map((b) => b.id), ['snare', 'torch']);
+  assert.deepEqual(buildList(fresh).map((b) => b.id), ['workbench', 'snare', 'torch']);
   const s = builder();
   assert.ok(buildList(s).some((b) => b.id === 'stonewall'));
+  tableAt(s, s.players[0], 'workbench');
   buildItem(s, 'spear');
   assert.ok(s.owned.spear);
   assert.ok(!buildList(s).some((b) => b.id === 'spear'));
@@ -626,6 +636,7 @@ test('a flare sends nearby dinosaurs running', () => {
   toNight(s);
   const spot = openSpot(s, 400);
   Object.assign(s.players[0], spot);
+  tableAt(s, s.players[0]);
   const r = fakeRaptor(spot.x + 60, spot.y);
   s.dinos = [r];
   buildItem(s, 'flare');
@@ -699,4 +710,38 @@ test('the build target is never a tile a player stands on', () => {
   Object.assign(a, { x: spot.x, y: spot.y, fx: 1, fy: 0 });
   Object.assign(b, { x: spot.x + TILE, y: spot.y });
   assert.equal(buildTarget(s, a).why, 'player', 'not on a partner either');
+});
+
+test('crafting needs the right table nearby; placing does not', () => {
+  const s = builder();
+  const p = s.players[0];
+  Object.assign(p, openSpot(s, 300), { fx: 1, fy: 0 });
+  buildItem(s, 'spear');
+  assert.ok(!s.owned.spear, 'no table, no spear');
+  assert.ok(s.events.some((e) => e.type === 'needstation'));
+  assert.equal(s.stock.wood, 50, 'nothing spent');
+  const bench = tableAt(s, p, 'workbench');
+  buildItem(s, 'spear');
+  assert.ok(s.owned.spear, 'workbench crafts a spear');
+  buildItem(s, 'pickaxe');
+  assert.ok(!s.owned.pickaxe, 'a pickaxe needs the workshop');
+  bench.kind = 'workshop';
+  buildItem(s, 'pickaxe');
+  assert.ok(s.owned.pickaxe, 'workshop crafts it');
+  const home = { x: p.x, y: p.y };
+  Object.assign(p, { x: p.x + 200 });
+  buildItem(s, 'sling');
+  assert.ok(!s.owned.sling, 'too far from the table');
+  bench.kind = 'wall'; // no table anywhere now
+  Object.assign(p, home, { fx: 1, fy: 0 });
+  buildItem(s, 'wall');
+  assert.ok(s.structures.some((x) => x.kind === 'wall'), 'walls need no table');
+});
+
+test('you can build the tables themselves', () => {
+  const s = builder();
+  Object.assign(s.players[0], openSpot(s, 300), { fx: 1, fy: 0 });
+  buildItem(s, 'workbench');
+  assert.ok(s.structures.some((x) => x.kind === 'workbench'));
+  assert.equal(stationLevel(s, s.players[0]), 1);
 });

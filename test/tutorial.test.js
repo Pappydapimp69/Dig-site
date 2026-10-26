@@ -69,6 +69,9 @@ test('full walkthrough with real inputs completes the tutorial', () => {
   assert.equal(p.build.mode, 'place');
   assert.match(tutorialHint(tut, s).tip, /PUT THE WALL/);
   tapIn({ dig: true });                                                // build
+  assert.equal(currentStep(tut).id, 'bench');
+  Object.assign(p, { fx: 1, fy: 0 });
+  choose('workbench'); tapIn({ dig: true });                           // bench
   assert.equal(currentStep(tut).id, 'craft');
   choose('spear');                                                     // craft
   assert.equal(currentStep(tut).id, 'attack');

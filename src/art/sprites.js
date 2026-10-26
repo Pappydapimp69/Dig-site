@@ -385,3 +385,25 @@ export function iconSprites() {
   const pal = { m: '#c8c8c0', w: '#8a5f36', s: '#8d8577', f: '#ff7a1a', y: '#fff3b0', r: '#d0381a' };
   return Object.fromEntries(Object.entries(ICON_ROWS).map(([k, rows]) => [k, outline(pix(rows, pal))]));
 }
+
+export const workbenchSprite = () => outline(pix([
+  '...m....s.......',
+  '..mmm..sss......',
+  'wwwwwwwwwwwwwwww',
+  'WWWWWWWWWWWWWWWW',
+  '.l..........l...',
+  '.l..........l...',
+  '.l..........l...',
+  '.ll........ll...',
+], { m: '#c8c8c0', s: '#8d8577', w: '#b88a52', W: '#6e4a2a', l: '#5a3a20' }), '#1e1408');
+
+export const workshopSprite = () => outline(pix([
+  '....aaaaaa......',
+  '.....aaaa...ff..',
+  '....aaaaaa.fyf..',
+  'ssssssssssssssss',
+  'SgSSgSSSgSSgSSgS',
+  'SSSSSSSSSSSSSSSS',
+  'SgSSSgSSSSgSSSgS',
+  'SSSSSSSSSSSSSSSS',
+], { a: '#5a5a62', f: '#ff7a1a', y: '#fff3b0', s: '#a59c8a', S: '#8d8577', g: '#5d574d' }), '#1a1814');

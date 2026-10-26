@@ -20,7 +20,7 @@ async function waitFor(page, fn, timeout = 8000) {
   const page = await browser.newPage({ viewport: { width: 960, height: 600 } });
   const errors = [];
   page.on('pageerror', (e) => errors.push(e.message));
-  const step = () => page.evaluate(() => { const t = window.__digsite.tutorial; return t && !t.done ? ['move', 'dig', 'bank', 'chop', 'stack', 'mine', 'stone', 'build', 'craft', 'attack', 'trap', 'dusk', 'night'][t.i] : 'done'; });
+  const step = () => page.evaluate(() => { const t = window.__digsite.tutorial; return t && !t.done ? ['move', 'dig', 'bank', 'chop', 'stack', 'mine', 'stone', 'build', 'bench', 'craft', 'attack', 'trap', 'dusk', 'night'][t.i] : 'done'; });
   const holdKey = async (key, ms) => { await page.keyboard.down(key); await page.waitForTimeout(ms); await page.keyboard.up(key); };
   const goTo = (what) => page.evaluate((what) => {
     const d = window.__digsite, s = d.run, t = d.tutorial, p = s.players[0];
@@ -67,6 +67,10 @@ async function waitFor(page, fn, timeout = 8000) {
     await choose('wall');
     if (await page.evaluate(() => window.__digsite.buildMode) !== 'place') throw new Error('choosing the wall did not start placement');
     if (shots) await page.screenshot({ path: path.join(shots, 'tut-build.png') });
+    await page.keyboard.press('KeyE'); await page.waitForTimeout(100);
+    if (await step() !== 'bench') throw new Error(`expected bench, got ${await step()}`);
+    await page.evaluate(() => { const p = window.__digsite.run.players[0]; p.fx = 1; p.fy = 0; });
+    await choose('workbench');
     await page.keyboard.press('KeyE'); await page.waitForTimeout(100);
     if (await step() !== 'craft') throw new Error(`expected craft, got ${await step()}`);
     await choose('spear');

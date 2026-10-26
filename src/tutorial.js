@@ -15,7 +15,8 @@ export const STEPS = [
   { id: 'mine', text: 'HOLD {DIG} NEXT TO THE ROCKS TO MINE STONE.', tip: 'STAND BESIDE THE MARKED ROCK, AWAY FROM TREES.' },
   { id: 'stone', text: 'BRING THE STONE TO CAMP.', tip: 'WOOD AND STONE AT CAMP ARE WHAT YOU BUILD WITH.' },
   { id: 'build', text: 'PRESS {BUILD} TO OPEN THE BUILD MENU. CHOOSE WOOD WALL WITH {CHOOSE} AND {PLACE}.', tip: '{BUILD} CLOSES THE MENU.' },
-  { id: 'craft', text: 'OPEN THE BUILD MENU AGAIN. CHOOSE SPEAR TO CRAFT IT.', tip: 'MORE BUILDS UNLOCK AS YOU FILL MUSEUM REQUESTS.' },
+  { id: 'bench', text: 'NOW BUILD A WORKBENCH THE SAME WAY. TOOLS AND WEAPONS ARE CRAFTED AT ONE.', tip: 'BETTER GEAR NEEDS A STONE WORKSHOP LATER.' },
+  { id: 'craft', text: 'STAND AT THE WORKBENCH. OPEN THE BUILD MENU AND CHOOSE SPEAR.', tip: 'MORE BUILDS UNLOCK AS YOU FILL MUSEUM REQUESTS.' },
   { id: 'attack', text: 'PRESS {ATTACK} TO SWING YOUR SPEAR.', tip: 'HIT A DINOSAUR ENOUGH AND IT RUNS OFF.' },
   { id: 'trap', text: 'PRESS {TRAP} TO SET A SNARE.', tip: 'A DINOSAUR THAT STEPS ON A SNARE IS STUNNED.' },
   { id: 'dusk', text: 'NIGHT IS COMING. GO BACK TO THE FIRE.', tip: 'DINOSAURS COME OUT AT NIGHT.' },
@@ -78,6 +79,7 @@ function enter(tut, s) {
   tut.base = { x: p.x, y: p.y, bones: tut.site.bones };
   // The museum tops up supplies so the build steps can't stall on materials.
   if (STEPS[tut.i].id === 'build') { s.stock.wood = Math.max(s.stock.wood, 4); s.stock.stone = Math.max(s.stock.stone, 1); }
+  if (STEPS[tut.i].id === 'bench') s.stock.wood = Math.max(s.stock.wood, 4);
   if (STEPS[tut.i].id === 'craft') { s.stock.wood = Math.max(s.stock.wood, 2); s.stock.stone = Math.max(s.stock.stone, 1); }
   if (STEPS[tut.i].id === 'dusk' && s.tutorial) {
     s.tutorial.hold = false;
@@ -104,6 +106,7 @@ export function updateTutorial(tut, s, events, dt) {
     case 'mine': ok = has('mine'); break;
     case 'stone': ok = has('stone'); break;
     case 'build': ok = events.some((e) => e.type === 'built' && e.item === 'wall'); break;
+    case 'bench': ok = events.some((e) => e.type === 'built' && e.item === 'workbench'); break;
     case 'craft': ok = events.some((e) => e.type === 'built' && e.item === 'spear'); break;
     case 'attack': ok = has('swing'); break;
     case 'trap': ok = has('trap'); break;
@@ -129,6 +132,8 @@ export function tutorialHint(tut, s) {
   else if (step.id === 'mine' && p.carry.length >= s.st.cap) warn = 'YOUR BAG IS FULL. EMPTY IT AT CAMP FIRST.';
   else if ((step.id === 'mine' || step.id === 'attack' || step.id === 'trap') && p.build !== null) warn = 'THE BUILD MENU IS OPEN. PRESS {BUILD} TO CLOSE IT.';
   else if (step.id === 'build' && p.build && p.build.mode === 'place') warn = 'NOW PRESS {PLACE} TO PUT THE WALL IN THE OUTLINE.';
+  else if (step.id === 'bench' && p.build && p.build.mode === 'place') warn = 'NOW PRESS {PLACE} TO PUT THE WORKBENCH DOWN.';
+  else if (step.id === 'craft' && !s.structures.some((x) => x.kind === 'workbench' && dist(x, p) < CFG.stationR)) warn = 'WALK UP TO YOUR WORKBENCH FIRST.';
   return { text: step.text, tip: warn || (tut.t > TIP_AFTER ? step.tip : null), warn: !!warn, n: tut.i + 1, of: STEPS.length };
 }
 
@@ -138,6 +143,7 @@ export function tutorialTarget(tut, s) {
     case 'dig': return tut.site;
     case 'bank': case 'stack': case 'stone': case 'dusk': return s.world.camp;
     case 'chop': return tut.tree;
+    case 'craft': return s.structures.find((x) => x.kind === 'workbench') || null;
     case 'mine': return tut.rock;
     default: return null;
   }
