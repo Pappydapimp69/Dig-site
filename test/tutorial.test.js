@@ -74,6 +74,12 @@ test('full walkthrough with real inputs completes the tutorial', () => {
   choose('workbench'); tapIn({ dig: true });                           // bench
   assert.equal(currentStep(tut).id, 'craft');
   choose('spear');                                                     // craft
+  assert.equal(currentStep(tut).id, 'workshop');
+  Object.assign(p, { fx: -1, fy: 0 });
+  choose('workshop'); tapIn({ dig: true });                            // workshop
+  assert.equal(currentStep(tut).id, 'craft2');
+  choose('pickaxe');                                                   // craft2
+  assert.ok(s.owned.pickaxe);
   assert.equal(currentStep(tut).id, 'attack');
   tapIn({ attack: true });                                             // attack
   assert.equal(currentStep(tut).id, 'trap');
