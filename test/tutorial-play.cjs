@@ -66,8 +66,8 @@ async function waitFor(page, fn, timeout = 8000) {
       await page.keyboard.down('KeyE');
       try { await waitFor(page, () => window.__digsite.buildMode === null, 15000); } finally { await page.keyboard.up('KeyE'); }
     };
-    const choose = async (id) => {
-      await page.keyboard.press('KeyB'); await page.waitForTimeout(60);
+    const choose = async (id, gear = false) => {
+      await page.keyboard.press(gear ? 'KeyE' : 'KeyB'); await page.waitForTimeout(60); // gear: use the table
       for (let i = 0; i < 10 && (await page.evaluate(() => window.__digsite.buildName())) !== id; i++) { await page.keyboard.press('KeyS'); await page.waitForTimeout(60); }
       await page.keyboard.press('KeyE'); await page.waitForTimeout(80);
       if (id !== 'wall') await holdUntilBuilt();
@@ -80,12 +80,12 @@ async function waitFor(page, fn, timeout = 8000) {
     await page.evaluate(() => { const p = window.__digsite.run.players[0]; p.fx = 1; p.fy = 0; });
     await choose('workbench');
     if (await step() !== 'craft') throw new Error(`expected craft, got ${await step()}`);
-    await choose('spear');
+    await choose('spear', true);
     if (await step() !== 'workshop') throw new Error(`expected workshop, got ${await step()}`);
     await page.evaluate(() => { const p = window.__digsite.run.players[0]; p.fx = -1; p.fy = 0; });
     await choose('workshop');
     if (await step() !== 'craft2') throw new Error(`expected craft2, got ${await step()}`);
-    await choose('pickaxe');
+    await choose('pickaxe', true);
     if (await step() !== 'attack') throw new Error(`expected attack, got ${await step()}`);
     await page.keyboard.press('KeyF'); await page.waitForTimeout(100);
     if (await step() !== 'trap') throw new Error(`expected trap, got ${await step()}`);

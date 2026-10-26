@@ -106,6 +106,15 @@ export function makeInput(target) {
     }
     if (touch.x || touch.y) { p1.x = touch.x; p1.y = touch.y; }
     for (const key of ['dig', 'trap', 'attack', 'build']) p1[key] = p1[key] || touch[key] || tapped.has(`touch:${key}`);
+    // Fresh presses since the last read (xTap). A release and re-press inside
+    // one frame look like "still held" to edge detection; these catch it.
+    const t = (...codes) => codes.some((c) => tapped.has(c));
+    const taps1 = { dig: ['KeyE', 'touch:dig'], trap: ['KeyQ', 'touch:trap'], attack: ['KeyF', 'touch:attack'], build: ['KeyB', 'touch:build'] };
+    const taps2 = { dig: ['Period', 'Numpad0'], trap: ['Comma', 'NumpadDecimal'], attack: ['Slash'], build: ['Semicolon'] };
+    for (const key of Object.keys(taps1)) {
+      p1[`${key}Tap`] = t(...taps1[key], ...(n === 1 ? taps2[key] : []), ...(n === 1 && key === 'dig' ? ['Space'] : []), ...(n === 1 && key === 'trap' ? ['ShiftLeft'] : []));
+      p2[`${key}Tap`] = t(...taps2[key]);
+    }
     tapped.clear();
     const out = n === 1 ? [p1] : [p1, p2];
     for (const { pad, player } of padOwners(n)) {

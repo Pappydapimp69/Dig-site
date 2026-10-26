@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { newRun, update, buildList } from '../src/game.js';
+import { newRun, update, menuItems } from '../src/game.js';
 import { CFG, buildById } from '../src/data.js';
 import { makeTutorial, updateTutorial, currentStep, tutorialHint, tutorialTarget, STEPS, TUTORIAL_SEED, TIP_AFTER } from '../src/tutorial.js';
 import { fillKeys } from '../src/keys.js';
@@ -61,8 +61,9 @@ test('full walkthrough with real inputs completes the tutorial', () => {
   Object.assign(p, { x: s.world.camp.x, y: s.world.camp.y + 90, fx: 0, fy: 1 });
   const tapIn = (inp) => { frame(s, tut, inp); frame(s, tut); };
   const choose = (id) => {
-    tapIn({ build: true });
-    for (let i = 0; i < 10 && buildList(s)[p.build.sel].id !== id; i++) tapIn({ y: 1 });
+    frame(s, tut); // let go of anything still held
+    tapIn(buildById[id].kind === 'place' ? { build: true } : { dig: true }); // gear: use the table
+    for (let i = 0; i < 10 && menuItems(s, p)[p.build.sel].id !== id; i++) tapIn({ y: 1 });
     tapIn({ dig: true });
     if (p.build && p.build.mode !== 'menu') hold(s, tut, buildById[id].time + 0.05, { dig: true });
   };

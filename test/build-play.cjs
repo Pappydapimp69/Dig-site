@@ -57,7 +57,10 @@ async function waitFor(page, fn, timeout = 6000) {
     await tap('KeyE'); await holdUntilBuilt();
     await waitFor(page, () => window.__digsite.run.structures.some((x) => x.kind === 'workbench'));
     if (shots) await page.screenshot({ path: path.join(shots, 'build-bench.png') });
-    await tap('KeyB');
+    // Crafting happens at the table: press E facing it to open its menu.
+    await tap('KeyE');
+    if (await page.evaluate(() => window.__digsite.buildFrom) !== 'workbench') throw new Error('E at the workbench did not open it');
+    if (shots) await page.screenshot({ path: path.join(shots, 'bench-open.png') });
     for (let i = 0; i < 14 && (await page.evaluate(() => window.__digsite.buildName())) !== 'spear'; i++) await tap('KeyS');
     await tap('KeyE'); await holdUntilBuilt();
     await waitFor(page, () => window.__digsite.run.owned.spear === true);

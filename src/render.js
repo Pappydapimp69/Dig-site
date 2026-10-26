@@ -2,7 +2,7 @@
 // nearest-neighbour, so every pixel stays crisp. World units are 2x screen px.
 import { T, TILE } from './world.js';
 import { CFG, UPGRADES, TRAITS, DINOS, BUILDS, STATIONS, buildById, nextUnlock, speciesById, upgradeCost } from './data.js';
-import { buildList, buildTarget, canAfford, hasStation, tierFor } from './game.js';
+import { menuItems, tableNear, buildTarget, canAfford, hasStation, tierFor } from './game.js';
 import { collection } from './save.js';
 import { drawText, textWidth } from './art/font.js';
 import { keyName, fillKeys } from './keys.js';
@@ -132,6 +132,8 @@ export function makeRenderer(cv) {
     } else if (e.type === 'cantafford' && p) {
       const b = buildById[e.item];
       floaters.push({ x: p.x / 2, y: p.y / 2 - 18, t: 1, text: `NEED ${costText(b.cost)}`, color: '#ff8a7a' });
+    } else if (e.type === 'nothingtocraft' && p) {
+      floaters.push({ x: p.x / 2, y: p.y / 2 - 18, t: 1.4, text: 'NOTHING NEW TO CRAFT HERE', color: '#c8a050' });
     } else if (e.type === 'needstation' && p) {
       floaters.push({ x: p.x / 2, y: p.y / 2 - 18, t: 1.4, text: `NEEDS A ${STATIONS[buildById[e.item].needs].toUpperCase()}`, color: '#ff8a7a' });
     } else if (e.type === 'cantbuild' && p) {
@@ -778,6 +780,17 @@ export function makeRenderer(cv) {
   // once you've picked something to place.
   function drawBuild(s, device) {
     let row = 0;
+    // Standing at a crafting table: say how to use it.
+    for (const p of s.players) {
+      if (p.build || p.down) continue;
+      const t = tableNear(s, p);
+      if (!t) continue;
+      const label = `${keyName('dig', device)} USE ${buildById[t.kind].name}`;
+      const x = t.x / 2 - cam.x, y = t.y / 2 - cam.y - 22 - Math.round(Math.sin(s.time * 4));
+      const w = textWidth(label) + 8;
+      panel(Math.round(x - w / 2), y - 3, w, 13);
+      drawText(ctx, label, x, y, { align: 'center', color: '#ffe08a' });
+    }
     for (const p of s.players) {
       if (!p.build || p.down) continue;
       const tag = s.players.length > 1 ? `P${p.id + 1} ` : '';
@@ -814,13 +827,14 @@ export function makeRenderer(cv) {
         continue;
       }
       // The menu.
-      const list = buildList(s);
+      const list = menuItems(s, p);
+      if (!list.length) continue;
       const sel = p.build.sel % list.length;
       const mw = 220, mh = 30 + list.length * 12;
       const mx = s.players.length > 1 ? (p.id === 0 ? 10 : W - mw - 10) : Math.round(W / 2 - mw / 2);
       const my = Math.round(H / 2 - mh / 2);
       panel(mx, my, mw, mh);
-      drawText(ctx, `${tag}BUILD`, mx + 6, my + 5, { color: '#ffe08a' });
+      drawText(ctx, `${tag}${p.build.from ? buildById[p.build.from].name : 'BUILD'}`, mx + 6, my + 5, { color: '#ffe08a' });
       drawText(ctx, `WOOD ${s.stock.wood}  STONE ${s.stock.stone}`, mx + mw - 6, my + 5, { align: 'right', color: '#b8c8a0' });
       list.forEach((it, i) => {
         const y = my + 17 + i * 12;

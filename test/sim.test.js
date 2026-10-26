@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { newRun, update, nightRoster, stats, leave, buildList, buildTarget, tierFor, stationLevel } from '../src/game.js';
+import { newRun, update, nightRoster, stats, leave, buildList, menuItems, buildTarget, tierFor, stationLevel } from '../src/game.js';
 import { blocked, treeNear, TILE, T } from '../src/world.js';
 import { CFG, DINOS, TRAITS, TRAIT_POOL, buildById } from '../src/data.js';
 import { freshSave, applyRun, buy, loadSave, collection, perks } from '../src/save.js';
@@ -470,13 +470,16 @@ function tableAt(s, p, kind = 'workshop') {
   return st;
 }
 
-// Open the build menu, move down to an item, pick it, and (for placeables) put it down.
+// Pick an item and build it: placeables from the build menu, gear from the
+// table next to you (press dig at it). Holds dig until the bar fills.
 function buildItem(s, id, p = s.players[0]) {
   const press = (inp) => { update(s, [inp], STEP); update(s, [{}], STEP); };
-  if (p.build === null) press({ build: true });
-  assert.equal(p.build.mode, 'menu');
-  for (let i = 0; i < 20 && buildList(s)[p.build.sel].id !== id; i++) press({ y: 1 });
-  assert.equal(buildList(s)[p.build.sel].id, id);
+  const craft = buildById[id].kind !== 'place';
+  update(s, [{}], STEP); // let go of anything still held
+  if (p.build === null) press(craft ? { dig: true } : { build: true });
+  if (!p.build) return; // no table here: nothing opens
+  for (let i = 0; i < 20 && menuItems(s, p)[p.build.sel]?.id !== id; i++) press({ y: 1 });
+  if (menuItems(s, p)[p.build.sel]?.id !== id) { press({ build: true }); return; }
   press({ dig: true });
   if (p.build && p.build.mode !== 'menu') { run(s, buildById[id].time + 0.05, [{ dig: true }]); update(s, [{}], STEP); }
 }
@@ -490,7 +493,7 @@ test('the build menu: choosing a wall shows a ghost, not before; moving is froze
   assert.equal(p.build.mode, 'menu');
   run(s, 0.3, [{ x: 1 }]);
   assert.equal(p.x, x0, 'frozen while choosing');
-  while (buildList(s)[p.build.sel].id !== 'wall') { update(s, [{ y: 1 }], STEP); update(s, [{}], STEP); }
+  while (menuItems(s, p)[p.build.sel].id !== 'wall') { update(s, [{ y: 1 }], STEP); update(s, [{}], STEP); }
   update(s, [{ dig: true }], STEP); update(s, [{}], STEP);
   assert.equal(p.build.mode, 'place');
   assert.equal(p.build.id, 'wall');
@@ -716,30 +719,45 @@ test('the build target is never a tile a player stands on', () => {
   assert.equal(buildTarget(s, a).why, 'player', 'not on a partner either');
 });
 
-test('crafting needs the right table nearby; placing does not', () => {
+test('the build menu lists only structures; gear is crafted at its own table', () => {
   const s = builder();
   const p = s.players[0];
   Object.assign(p, openSpot(s, 300), { fx: 1, fy: 0 });
+  const kinds = menuItems(s, p, null).map((b) => b.kind);
+  assert.ok(kinds.length && kinds.every((k) => k === 'place'), 'build menu: structures only');
+  assert.deepEqual(menuItems(s, p, 'workbench').map((b) => b.id), ['axe', 'spear']);
+  assert.deepEqual(menuItems(s, p, 'workshop').map((b) => b.id), ['pickaxe', 'sling', 'flare']);
+  // No table: dig does nothing table-ish and there's no way to craft.
   buildItem(s, 'spear');
-  assert.ok(!s.owned.spear, 'no table, no spear');
-  assert.ok(s.events.some((e) => e.type === 'needstation'));
-  assert.equal(s.stock.wood, 50, 'nothing spent');
+  assert.ok(!s.owned.spear);
+  // Workbench: dig opens its menu; it crafts the spear but has no pickaxe.
   const bench = tableAt(s, p, 'workbench');
+  update(s, [{ dig: true }], STEP); update(s, [{}], STEP);
+  assert.equal(p.build.from, 'workbench');
+  update(s, [{ build: true }], STEP); update(s, [{}], STEP);
+  assert.equal(p.build, null, 'build key closes it');
   buildItem(s, 'spear');
-  assert.ok(s.owned.spear, 'workbench crafts a spear');
+  assert.ok(s.owned.spear);
   buildItem(s, 'pickaxe');
-  assert.ok(!s.owned.pickaxe, 'a pickaxe needs the workshop');
+  assert.ok(!s.owned.pickaxe, 'not at a workbench');
   bench.kind = 'workshop';
   buildItem(s, 'pickaxe');
-  assert.ok(s.owned.pickaxe, 'workshop crafts it');
-  const home = { x: p.x, y: p.y };
-  Object.assign(p, { x: p.x + 200 });
-  buildItem(s, 'sling');
-  assert.ok(!s.owned.sling, 'too far from the table');
-  bench.kind = 'wall'; // no table anywhere now
-  Object.assign(p, home, { fx: 1, fy: 0 });
-  buildItem(s, 'wall');
-  assert.ok(s.structures.some((x) => x.kind === 'wall'), 'walls need no table');
+  assert.ok(s.owned.pickaxe, 'the workshop makes it');
+  // Too far away: dig doesn't open the table.
+  Object.assign(p, { x: p.x + 120 });
+  update(s, [{ dig: true }], STEP); update(s, [{}], STEP);
+  assert.notEqual(p.build?.from, 'workshop');
+});
+
+test('a table with nothing left to craft says so', () => {
+  const s = builder();
+  const p = s.players[0];
+  Object.assign(p, openSpot(s, 300));
+  tableAt(s, p, 'workbench');
+  s.owned.axe = s.owned.spear = true;
+  update(s, [{ dig: true }], STEP);
+  assert.equal(p.build, null);
+  assert.ok(s.events.some((e) => e.type === 'nothingtocraft'));
 });
 
 test('you can build the tables themselves', () => {
@@ -756,7 +774,7 @@ test('building and crafting take time; moving resets it; materials spent at the 
   Object.assign(p, openSpot(s, 300), { fx: 1, fy: 0 });
   const press = (inp) => { update(s, [inp], STEP); update(s, [{}], STEP); };
   press({ build: true });
-  while (buildList(s)[p.build.sel].id !== 'wall') press({ y: 1 });
+  while (menuItems(s, p)[p.build.sel].id !== 'wall') press({ y: 1 });
   press({ dig: true });
   run(s, buildById.wall.time * 0.6, [{ dig: true }]);
   assert.equal(s.structures.length, 0, 'not done yet');
@@ -769,8 +787,10 @@ test('building and crafting take time; moving resets it; materials spent at the 
   assert.equal(s.stock.wood, 48);
   // Crafting at a table works the same way.
   tableAt(s, p, 'workbench');
-  press({ build: true });
-  while (buildList(s)[p.build.sel].id !== 'spear') press({ y: 1 });
+  update(s, [{}], STEP); // let go of dig first
+  press({ dig: true });
+  assert.equal(p.build.from, 'workbench');
+  while (menuItems(s, p)[p.build.sel].id !== 'spear') press({ y: 1 });
   press({ dig: true });
   assert.equal(p.build.mode, 'craft');
   run(s, buildById.spear.time * 0.5, [{ dig: true }]);
@@ -778,4 +798,35 @@ test('building and crafting take time; moving resets it; materials spent at the 
   run(s, buildById.spear.time, [{ dig: true }]);
   assert.ok(s.owned.spear);
   assert.equal(p.build, null);
+});
+
+test('with two tables in reach, dig opens the one you face', () => {
+  const s = builder();
+  const p = s.players[0];
+  Object.assign(p, openSpot(s, 300));
+  const tx = Math.floor(p.x / TILE), ty = Math.floor(p.y / TILE);
+  for (const [kind, dx] of [['workbench', 1], ['workshop', -1]]) {
+    const st = { kind, tx: tx + dx, ty, x: (tx + dx + 0.5) * TILE, y: (ty + 0.5) * TILE, hp: 40, maxHp: 40, solid: true, life: 0 };
+    s.structures.push(st); s.structAt.set(ty * s.world.w + tx + dx, st);
+  }
+  for (const [fx, want] of [[1, 'workbench'], [-1, 'workshop']]) {
+    Object.assign(p, { fx, fy: 0 });
+    update(s, [{}], STEP); update(s, [{ dig: true }], STEP); update(s, [{}], STEP);
+    assert.equal(p.build.from, want);
+    update(s, [{ build: true }], STEP); update(s, [{}], STEP);
+  }
+});
+
+test('a re-press inside one frame still counts (input reports the tap)', () => {
+  const s = builder();
+  const p = s.players[0];
+  Object.assign(p, openSpot(s, 300));
+  tableAt(s, p, 'workbench');
+  update(s, [{ dig: true }], STEP);            // held from before
+  update(s, [{ dig: true }], STEP);            // still held: no edge
+  assert.equal(p.build?.from ?? null, 'workbench', 'first press opened it');
+  update(s, [{ build: true }], STEP); update(s, [{}], STEP);
+  update(s, [{ dig: true }], STEP);            // held again...
+  update(s, [{ dig: true, digTap: true }], STEP); // ...released and pressed between frames
+  assert.equal(p.build.from, 'workbench');
 });

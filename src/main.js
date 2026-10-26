@@ -1,4 +1,4 @@
-import { newRun, update, finish, leave, buildList } from './game.js';
+import { newRun, update, finish, leave, menuItems } from './game.js';
 import { makeRenderer } from './render.js';
 import { makeInput } from './input.js';
 import { loadSave, writeSave, applyRun, buy, perks } from './save.js';
@@ -295,9 +295,10 @@ window.__digsite = {
   get tutorial() { return tut; },
   buildName() {
     const b = run && run.players[0].build;
-    return !b ? null : b.mode === 'menu' ? buildList(run)[b.sel]?.id : b.id;
+    return !b ? null : b.mode === 'menu' ? menuItems(run, run.players[0])[b.sel]?.id : b.id;
   },
   buildTime: (id) => buildById[id].time,
+  get buildFrom() { return run && run.players[0].build ? run.players[0].build.from : null; },
   get buildMode() { return run && run.players[0].build ? run.players[0].build.mode : null; },
   step(seconds, inputs = []) {
     for (let t = 0; t < seconds && run && !run.over; t += STEP) update(run, inputs, STEP);

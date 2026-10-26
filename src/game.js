@@ -115,6 +115,30 @@ export function stationLevel(s, p) {
 }
 export const hasStation = (s, p, b) => !b.needs || stationLevel(s, p) >= b.needs;
 
+// The crafting table within reach to open with dig, if any. With two in
+// reach, the one you're facing wins.
+export function tableNear(s, p) {
+  let best = null, score = Infinity;
+  for (const st of s.structures) {
+    if (!buildById[st.kind].station) continue;
+    const d = dist(st, p);
+    if (d >= CFG.useR) continue;
+    const facing = ((st.x - p.x) * p.fx + (st.y - p.y) * p.fy) / (d || 1);
+    const sc = d - 30 * facing;
+    if (sc < score) { score = sc; best = st; }
+  }
+  return best;
+}
+
+// What a menu lists. The build menu (from = null): structures you've unlocked.
+// A table's menu (from = 'workbench' etc.): the gear that table makes.
+export function menuItems(s, p, from = p.build?.from ?? null) {
+  const list = buildList(s);
+  if (!from) return list.filter((b) => b.kind === 'place');
+  const lvl = buildById[from].station;
+  return list.filter((b) => b.needs === lvl);
+}
+
 // The tile in front of the player, and whether a structure can go there.
 export function buildTarget(s, p) {
   // Always the neighbouring tile in the facing direction (8-way), never the
@@ -352,10 +376,12 @@ function deposit(s, p) {
   if (gained) s.events.push({ type: 'deposit', id: p.id, gained });
 }
 
-// True only on the frame a button goes down.
+// True only on the frame a button goes down. inp[key + 'Tap'] (a fresh
+// press reported by the input layer) also counts, so a release and re-press
+// inside one frame isn't lost.
 function pressed(p, inp, key) {
   const now = !!inp[key];
-  const edge = now && !p.held[key];
+  const edge = (now && !p.held[key]) || !!inp[`${key}Tap`];
   p.held[key] = now;
   return edge;
 }
@@ -397,13 +423,13 @@ function updatePlayer(s, p, inp, dt) {
   const buildPress = pressed(p, inp, 'build');
   if (buildPress) {
     // The build key opens the menu, and closes the menu or cancels a placement.
-    p.build = p.build === null && buildList(s).length ? { mode: 'menu', sel: p.lastSel } : null;
+    p.build = p.build === null && menuItems(s, p, null).length ? { mode: 'menu', sel: p.lastSel, from: null } : null;
     s.events.push({ type: p.build === null ? 'buildoff' : 'buildon', id: p.id });
   }
 
   // Build menu: you stand still; up/down (or the snare button) choose, dig picks.
   if (p.build && p.build.mode === 'menu') {
-    const list = buildList(s);
+    const list = menuItems(s, p);
     if (!list.length) { p.build = null; return; }
     const navY = (inp.y || 0) > 0.5 ? 1 : (inp.y || 0) < -0.5 ? -1 : 0;
     const nav = navY !== p.navY ? navY : 0;
@@ -411,14 +437,15 @@ function updatePlayer(s, p, inp, dt) {
     let sel = p.build.sel % list.length;
     if (nav) sel = (sel + nav + list.length) % list.length;
     if (trapPress) sel = (sel + 1) % list.length;
-    p.build.sel = p.lastSel = sel;
+    p.build.sel = sel;
+    if (!p.build.from) p.lastSel = sel;
     p.moving = false;
     p.digT = p.chopT = p.mineT = 0;
     if (digPress) {
       const b = list[sel];
       if (!hasStation(s, p, b)) s.events.push({ type: 'needstation', id: p.id, item: b.id });
       else if (!canAfford(s, b)) s.events.push({ type: 'cantafford', id: p.id, item: b.id });
-      else p.build = { mode: b.kind === 'place' ? 'place' : 'craft', id: b.id, t: 0 };
+      else p.build = { mode: b.kind === 'place' ? 'place' : 'craft', id: b.id, t: 0, from: p.build.from };
     }
     collectAndBank(s, p);
     return;
@@ -444,7 +471,7 @@ function updatePlayer(s, p, inp, dt) {
   if (p.build && (p.build.mode === 'place' || p.build.mode === 'craft')) {
     const b = buildById[p.build.id];
     if (!inp.dig) p.build.armed = true; // the press that picked it from the menu doesn't count
-    if (trapPress) p.build = { mode: 'menu', sel: p.lastSel };
+    if (trapPress) p.build = { mode: 'menu', sel: p.build.from ? 0 : p.lastSel, from: p.build.from };
     else if (inp.dig && !p.moving && p.build.armed) {
       if (p.build.t === 0) {
         // Check up front so you don't hold for nothing.
@@ -469,6 +496,19 @@ function updatePlayer(s, p, inp, dt) {
     p.digT = p.chopT = p.mineT = 0;
     collectAndBank(s, p);
     return;
+  }
+
+  // Pressing dig at a crafting table opens it (unless a partner needs reviving).
+  if (digPress && !buildPress && !s.players.some((q) => q.down && dist(q, p) < CFG.reviveR)) {
+    const table = tableNear(s, p);
+    if (table) {
+      if (menuItems(s, p, table.kind).length) {
+        p.build = { mode: 'menu', sel: 0, from: table.kind };
+        s.events.push({ type: 'buildon', id: p.id });
+      } else s.events.push({ type: 'nothingtocraft', id: p.id, item: table.kind });
+      collectAndBank(s, p);
+      return;
+    }
   }
 
   // The dig button: revive a partner, else dig a site, else chop a tree, else mine a rock.

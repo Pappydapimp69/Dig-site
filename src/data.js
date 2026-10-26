@@ -51,7 +51,8 @@ export const CFG = {
   structR: 13,       // how much of a tile a wall blocks
   torchR: 55,        // torches scare dinosaurs this close
   torchLife: 100,    // seconds of night a torch burns
-  stationR: 64,      // stand this close to a crafting table to use it
+  stationR: 64,      // stand this close to a crafting table to craft at it
+  useR: 46,          // press dig this close to a table to open it
 };
 
 // One shared AI with per-kind stats (see game.js updateDino).

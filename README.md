@@ -24,7 +24,7 @@ npm run serve        # then open http://127.0.0.1:8080
 
 - **Solo:** Space on the menu. WASD or arrows to move, E or Space to dig/chop/mine, Q or Shift for a snare, F to attack, B to build. Esc pauses; from the pause menu, L leaves the island (by day).
 - **Co-op:** Enter on the menu. P1: WASD, E, Q, F, B. P2: arrows, `.` dig, `,` snare, `/` attack, `;` build.
-- **Build menu:** B opens it (you stand still while it's open). W/S choose, E picks, B closes. Building and crafting take time: hold E (standing still) until the bar fills, like chopping. For walls, torches, snares and tables a ghost appears on the tile you face first. Q goes back to the menu, B cancels. Materials are spent when the bar finishes. Materials come from the camp stock.
+- **Build menu:** B opens it (you stand still while it's open) and lists the structures you've unlocked. W/S choose, E picks, B closes. Building and crafting take time: hold E (standing still) until the bar fills, like chopping. For walls, torches, snares and tables a ghost appears on the tile you face first. Q goes back to the menu, B cancels. Materials are spent when the bar finishes. Materials come from the camp stock.
 - **Controllers:** left stick or D-pad to move, A (or RT) to dig/chop/mine/revive, X (or a bumper) for a snare, B to attack, Y for the build menu (D-pad to choose, A to pick/place, X back), Start to pause; from pause, Y leaves the island and B quits. The menu works with the D-pad and A. In co-op with one controller, the keyboard is P1 and the controller is P2; with two controllers each gets a player. Controllers rumble when you're hit and when the rex roars.
 - Menu: number keys 1-7 buy upgrades.
 
@@ -37,7 +37,7 @@ npm run serve        # then open http://127.0.0.1:8080
 - **Tyrannosaurus** - the last night. Bites for 2 and shrugs off snares fast, but it only sees you when you move. Freeze.
 
 **Crafting tables**
-- Tools, weapons and flares are crafted while standing at a table. A **Workbench** (4 wood) makes the axe and spear; a **Stone Workshop** (3 wood, 4 stone, unlocks with the pickaxe) makes the pickaxe, sling and flare. Walls, torches and snares need no table.
+- Tools, weapons and flares are crafted at a table: face it and press E (controller A, phone DIG) to open its own menu. A **Workbench** (4 wood) makes the axe and spear; a **Stone Workshop** (3 wood, 4 stone, unlocks with the pickaxe) makes the pickaxe, sling and flare. Walls, torches and snares need no table.
 
 **Everything else**
 - Hold dig next to a tree to chop wood. Wood brought to camp by day is stacked and burned at dusk; wood brought at night keeps the fire alive.
