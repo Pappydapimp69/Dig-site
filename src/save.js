@@ -10,6 +10,7 @@ export function freshSave() {
     museum: {},
     runs: 0,
     wins: 0,
+    tutorialDone: false,
   };
 }
 

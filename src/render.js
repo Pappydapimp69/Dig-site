@@ -4,6 +4,7 @@ import { T, TILE } from './world.js';
 import { CFG, UPGRADES, TRAITS, DINOS, speciesById, upgradeCost } from './data.js';
 import { collection } from './save.js';
 import { drawText, textWidth } from './art/font.js';
+import { keyName, fillKeys } from './keys.js';
 import { buildTerrain, S } from './art/terrain.js';
 import * as SP from './art/sprites.js';
 
@@ -128,7 +129,7 @@ export function makeRenderer(cv) {
   function darkness(s) {
     const D = TRAITS[s.trait].dark || DARK;
     if (s.phase === 'night') return D;
-    if (s.t > CFG.dayLen - 12) return D * (s.t - (CFG.dayLen - 12)) / 12;
+    if (s.t > s.dayLen - 12) return D * (s.t - (s.dayLen - 12)) / 12;
     if (s.night > 0 && s.t < 5) return D * (1 - s.t / 5);
     return 0;
   }
@@ -496,10 +497,10 @@ export function makeRenderer(cv) {
 
   function drawHud(s) {
     const isNight = s.phase === 'night';
-    const len = isNight ? CFG.nightLen : CFG.dayLen;
+    const len = isNight ? s.nightLen : s.dayLen;
     panel(4, 4, 108, 34);
     blit(isNight ? art.moon : art.sun, 8, 8);
-    drawText(ctx, isNight ? `NIGHT ${s.night}/${CFG.nights}` : `DAY ${s.night + 1}`, 21, 9, { color: isNight ? '#b8c8ff' : '#ffe08a' });
+    drawText(ctx, isNight ? `NIGHT ${s.night}/${s.nights}` : `DAY ${s.night + 1}`, 21, 9, { color: isNight ? '#b8c8ff' : '#ffe08a' });
     bar(9, 21, 98, 1 - s.t / len, isNight ? '#6c8cff' : '#ffc53d');
     drawText(ctx, `$${s.funding}`, 9, 27, { color: '#ffd84d' });
     let hy = 42;
@@ -520,7 +521,7 @@ export function makeRenderer(cv) {
       drawText(ctx, 'THE FIRE IS DYING! BRING WOOD!', 8, hy + 2, { color: '#ff6a5a' });
     }
     // Island intro banner.
-    if (s.time < 4.5) {
+    if (s.time < 4.5 && !s.tutorial) {
       const tr = TRAITS[s.trait];
       const al = Math.min(1, (4.5 - s.time) * 2);
       ctx.globalAlpha = al;
@@ -650,7 +651,9 @@ export function makeRenderer(cv) {
       drawText(ctx, 'E DIG/CHOP  Q TRAP  ESC PAUSE  (P2: . AND ,)', W / 2, 244, { align: 'center', color: '#b8c8a0' });
     }
     drawText(ctx, `RUNS ${save.runs}   ISLANDS CLEARED ${save.wins}`, W / 2, 256, { align: 'center', color: '#7a8a70' });
-    if (msg) drawText(ctx, msg, W / 2, 270, { align: 'center', color: '#ff6a5a' });
+    const tutLine = touch ? 'TAP HERE FOR THE TUTORIAL' : `${keyName('tutorial', device)}  TUTORIAL`;
+    drawText(ctx, save.tutorialDone ? tutLine : `NEW HERE?  ${tutLine}`, W / 2, 268, { align: 'center', color: save.tutorialDone ? '#8a8070' : pulse });
+    if (msg) drawText(ctx, msg, W / 2, 282, { align: 'center', color: /DONE/.test(msg) ? '#7dff8a' : '#ff6a5a' });
   }
 
   function drawSummary(s, time = 0) {
@@ -674,10 +677,58 @@ export function makeRenderer(cv) {
     ctx.fillRect(0, 0, W, H);
     panel(W / 2 - 90, 150, 180, 70);
     drawText(ctx, 'PAUSED', W / 2, 158, { scale: 2, align: 'center', color: '#ffd38a' });
-    const pad = device === 'pad';
-    drawText(ctx, pad ? 'START OR A  RESUME' : device === 'touch' ? 'TAP TO RESUME' : 'ESC  RESUME', W / 2, 186, { align: 'center' });
-    if (device !== 'touch') drawText(ctx, pad ? 'B  QUIT TO MUSEUM' : 'Q  QUIT TO MUSEUM', W / 2, 200, { align: 'center', color: '#ff8a7a' });
+    drawText(ctx, device === 'touch' ? 'TAP TO RESUME' : `${keyName('resume', device)}  RESUME`, W / 2, 186, { align: 'center' });
+    if (device !== 'touch') drawText(ctx, `${keyName('quit', device)}  QUIT TO MUSEUM`, W / 2, 200, { align: 'center', color: '#ff8a7a' });
   }
 
-  return { drawGame, drawMenu, drawSummary, drawPause, toast, event };
+  function wrap(text, max) {
+    const lines = [];
+    let line = '';
+    for (const w of text.split(' ')) {
+      if ((line + ' ' + w).trim().length > max) { lines.push(line); line = w; } else line = (line + ' ' + w).trim();
+    }
+    if (line) lines.push(line);
+    return lines;
+  }
+
+  // Tutorial card (top centre, between the HUD panels) and a guide arrow.
+  function drawTutorial(s, hint, target, device) {
+    const text = wrap(fillKeys(hint.text, device), 40);
+    const tip = hint.tip ? wrap(fillKeys(hint.tip, device), 40) : [];
+    const h = 14 + (text.length + tip.length) * 9;
+    panel(118, 4, 252, h);
+    drawText(ctx, `TUTORIAL ${hint.n}/${hint.of}`, 124, 8, { color: '#7a8a70', shadow: null });
+    text.forEach((l, i) => drawText(ctx, l, 124, 17 + i * 9));
+    tip.forEach((l, i) => drawText(ctx, l, 124, 17 + (text.length + i) * 9, { color: hint.warn ? '#ff8a5a' : '#ffe08a' }));
+
+    if (!target) return;
+    const x = target.x / 2 - cam.x, y = target.y / 2 - cam.y;
+    const bob = Math.round(Math.sin(s.time * 6) * 2);
+    ctx.fillStyle = '#ffe08a';
+    ctx.strokeStyle = '#14110c';
+    ctx.lineWidth = 1;
+    const tri = (ax, ay, ang) => {
+      ctx.save();
+      ctx.translate(Math.round(ax), Math.round(ay));
+      ctx.rotate(ang);
+      ctx.beginPath();
+      ctx.moveTo(6, 0); ctx.lineTo(-5, -5); ctx.lineTo(-2, 0); ctx.lineTo(-5, 5);
+      ctx.closePath();
+      ctx.fill();
+      ctx.stroke();
+      ctx.restore();
+    };
+    const m = 18;
+    if (x > m && x < W - m && y > m + h && y < H - m) {
+      tri(x, y - 24 + bob, Math.PI / 2); // bouncing arrow over the target
+    } else {
+      // Off screen: pin an arrow to the edge, pointing the way.
+      const cxs = W / 2, cys = H / 2;
+      const ang = Math.atan2(y - cys, x - cxs);
+      const k = Math.min((W / 2 - m) / Math.abs(Math.cos(ang) || 1e-6), (H / 2 - m) / Math.abs(Math.sin(ang) || 1e-6));
+      tri(cxs + Math.cos(ang) * (k + bob), cys + Math.sin(ang) * (k + bob), ang);
+    }
+  }
+
+  return { drawGame, drawMenu, drawSummary, drawPause, drawTutorial, toast, event };
 }

@@ -10,6 +10,8 @@ you buy upgrades between runs.
 
 ## Play
 
+New players: press **T** (controller **Y**, or tap the bottom line on a phone) on the menu for the tutorial. It's a calm island where the clock waits for you; finish it once for a $50 head start.
+
 ```
 npm run serve        # then open http://127.0.0.1:8080
 ```

@@ -11,6 +11,9 @@ const unit = (v) => Math.max(-1, Math.min(1, v));
 
 export function makeInput(target) {
   const down = new Set();
+  // Keys pressed since the sim last read input, so a tap shorter than a
+  // frame still counts (held-state alone misses it).
+  const tapped = new Set();
   const listeners = [];
   // On-screen controls write here; they drive player 1.
   const touch = { x: 0, y: 0, dig: false, trap: false, active: false };
@@ -21,7 +24,7 @@ export function makeInput(target) {
   target.addEventListener('keydown', (e) => {
     if (GAME_KEYS.has(e.code)) e.preventDefault();
     state.device = 'keys';
-    if (!e.repeat) emit(e.code);
+    if (!e.repeat) { emit(e.code); tapped.add(e.code); }
     down.add(e.code);
   });
   target.addEventListener('keyup', (e) => down.delete(e.code));
@@ -30,7 +33,7 @@ export function makeInput(target) {
   target.addEventListener('gamepadconnected', (e) => emit('PadConnected', e.gamepad.index));
   target.addEventListener('gamepaddisconnected', (e) => emit('PadDisconnected', e.gamepad.index));
 
-  const k = (c) => (down.has(c) ? 1 : 0);
+  const k = (c) => (down.has(c) || tapped.has(c) ? 1 : 0);
 
   function pads() {
     const list = (navigator.getGamepads && navigator.getGamepads()) || [];
@@ -97,6 +100,7 @@ export function makeInput(target) {
     if (touch.x || touch.y) { p1.x = touch.x; p1.y = touch.y; }
     p1.dig = p1.dig || touch.dig;
     p1.trap = p1.trap || touch.trap;
+    tapped.clear();
     const out = n === 1 ? [p1] : [p1, p2];
     for (const { pad, player } of padOwners(n)) {
       const o = out[player];

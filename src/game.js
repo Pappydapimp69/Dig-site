@@ -40,11 +40,11 @@ function pickContract(world, rng, tier) {
   return { sp: sp.id, need, have: 0, bonus: Math.round(need * sp.value * 1.5), done: false };
 }
 
-export function newRun({ seed = 1, players = 1, upgrades = {}, perks = [], tier = 0, trait } = {}) {
+export function newRun({ seed = 1, players = 1, upgrades = {}, perks = [], tier = 0, trait, tutorial = false } = {}) {
   const rng = mulberry32(seed);
   // Island trait and contract use their own stream so they never shift the world.
   const side = mulberry32((seed ^ 0x2545f491) >>> 0);
-  const traitId = trait ?? TRAIT_POOL[Math.floor(side() * TRAIT_POOL.length)];
+  const traitId = tutorial ? 'none' : trait ?? TRAIT_POOL[Math.floor(side() * TRAIT_POOL.length)];
   const tr = TRAITS[traitId];
   const world = makeWorld(rng, 80, 60, {
     extraSites: tr.extraSites || 0,
@@ -62,8 +62,12 @@ export function newRun({ seed = 1, players = 1, upgrades = {}, perks = [], tier 
   return {
     seed, rng, world, st, players: ps, dinos: [], traps: [], drops: [], spits: [],
     trait: traitId, tier, valueMult: 1 + CFG.tierValue * tier,
-    contract: pickContract(world, side, tier),
+    contract: tutorial ? null : pickContract(world, side, tier),
     phase: 'day', t: 0, night: 0, fire: st.fireR, fuel: 1, woodPile: 0, time: 0,
+    dayLen: CFG.dayLen, nightLen: tutorial ? 30 : CFG.nightLen, nights: tutorial ? 1 : CFG.nights,
+    // Tutorial: one short night, one raptor, no deaths, and the day waits
+    // (hold) until the tutorial overlay says it's time for dusk.
+    tutorial: tutorial ? { hold: true } : null,
     banked: {}, bankedCount: 0, amber: 0, funding: 0, payout: 0,
     over: false, result: null, events: [],
   };
@@ -107,7 +111,7 @@ function startNight(s) {
   // Compies scatter at dusk, dropping anything they stole.
   for (const d of s.dinos) if (d.carry) dropItem(s, d.x, d.y, d.carry);
   s.dinos = [];
-  const roster = nightRoster(s.night, s.tier, traitOf(s));
+  const roster = s.tutorial ? { raptor: 1 } : nightRoster(s.night, s.tier, traitOf(s));
   for (const [kind, n] of Object.entries(roster)) for (let i = 0; i < n; i++) spawn(s, kind);
   s.events.push({ type: 'night', n: s.night });
   if (roster.rex) s.events.push({ type: 'rexwarn' });
@@ -116,7 +120,7 @@ function startNight(s) {
 function endNight(s) {
   s.dinos = [];
   s.spits = [];
-  if (s.night >= CFG.nights) return finish(s, 'won');
+  if (s.night >= s.nights) return finish(s, 'won');
   s.phase = 'day';
   s.t = 0;
   s.fire = s.st.fireR;
@@ -143,7 +147,14 @@ function hurt(s, p, dmg, from) {
     move(s.world, p, Math.cos(a) * 24, Math.sin(a) * 24, CFG.pr);
   }
   s.events.push({ type: 'hurt', id: p.id });
-  if (p.hp <= 0) {
+  if (p.hp <= 0 && s.tutorial) {
+    // No failing the tutorial: wake up back at camp.
+    p.hp = s.st.hp;
+    p.x = s.world.camp.x;
+    p.y = s.world.camp.y + 20;
+    p.invuln = 2;
+    s.events.push({ type: 'rescued', id: p.id });
+  } else if (p.hp <= 0) {
     p.down = true;
     p.digT = p.chopT = 0;
     // Bones spill on the ground; a partner can grab them.
@@ -406,11 +417,12 @@ export function update(s, inputs, dt) {
   s.time += dt;
   s.t += dt;
 
-  if (s.phase === 'day' && s.t >= CFG.dayLen) startNight(s);
+  if (s.phase === 'day' && s.tutorial?.hold) s.t = Math.min(s.t, s.dayLen - 15);
+  if (s.phase === 'day' && s.t >= s.dayLen) startNight(s);
   else if (s.phase === 'night') {
-    s.fuel = Math.max(0, s.fuel - dt / CFG.nightLen);
+    s.fuel = Math.max(0, s.fuel - dt / s.nightLen);
     s.fire = s.st.fireR * clamp(s.fuel, 0, 1);
-    if (s.t >= CFG.nightLen) endNight(s);
+    if (s.t >= s.nightLen) endNight(s);
     if (s.over) return s;
   }
 

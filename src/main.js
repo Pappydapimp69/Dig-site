@@ -4,6 +4,7 @@ import { makeInput } from './input.js';
 import { loadSave, writeSave, applyRun, buy, perks } from './save.js';
 import { UPGRADES, speciesById, CFG } from './data.js';
 import { SFX, unlockAudio } from './sfx.js';
+import { makeTutorial, updateTutorial, tutorialHint, tutorialTarget, TUTORIAL_SEED } from './tutorial.js';
 
 const STEP = 1 / 60;
 const canvas = document.getElementById('game');
@@ -17,6 +18,8 @@ function storage() {
 let save = loadSave(storage());
 let screen = 'menu';
 let run = null;
+let tut = null;
+const device = () => (input.touch.active ? 'touch' : input.device);
 let msg = '';
 let paused = false;
 // Menu cursor for controllers: upgrades 0..n-1, then PLAY SOLO, PLAY CO-OP.
@@ -30,6 +33,15 @@ function start(players) {
     seed: (Math.random() * 2 ** 31) | 0, players, upgrades: save.upgrades,
     perks: perks(save), tier: Math.min(save.wins, 6),
   });
+  tut = null;
+  screen = 'play';
+  paused = false;
+  acc = 0;
+}
+
+function startTutorial() {
+  run = newRun({ seed: TUTORIAL_SEED, players: 1, tutorial: true });
+  tut = makeTutorial(run);
   screen = 'play';
   paused = false;
   acc = 0;
@@ -42,6 +54,18 @@ function tryBuy(i) {
 }
 
 function endRun() {
+  if (run.tutorial) {
+    // The tutorial never counts as a run; finishing it once pays a starter bonus.
+    if (run.result === 'won') {
+      const first = !save.tutorialDone;
+      save = { ...save, tutorialDone: true, funding: save.funding + (first ? 50 : 0) };
+      writeSave(storage(), save);
+      msg = first ? 'TUTORIAL DONE! +$50 TO START YOU OFF.' : 'TUTORIAL DONE!';
+    }
+    tut = null;
+    screen = 'menu';
+    return;
+  }
   save = applyRun(save, run);
   writeSave(storage(), save);
   screen = 'summary';
@@ -61,6 +85,7 @@ const EVENT_TEXT = {
   escaped: () => 'The compy got away.',
   amber: () => `Amber! Worth $${CFG.amberValue}.`,
   contract: (e) => `Museum request filled! +$${e.bonus}`,
+  rescued: () => 'You made it back to camp.',
   wood: (e) => (run.phase === 'night' ? 'The fire flares up.' : `Firewood stacked (${run.woodPile}).`),
 };
 
@@ -95,6 +120,7 @@ function press(code) {
     if (code === 'Space') start(1);
     else if (code === 'Enter') start(2);
     else if (code === 'PadStart') start(input.padCount() >= 2 ? 2 : 1);
+    else if (code === 'KeyT' || code === 'PadY') startTutorial();
     else if (code === 'PadUp') sel = (sel + COOP) % (COOP + 1);
     else if (code === 'PadDown') sel = (sel + 1) % (COOP + 1);
     else if (code === 'PadLeft' || code === 'PadRight') { if (sel >= SOLO) sel = sel === SOLO ? COOP : SOLO; }
@@ -123,6 +149,7 @@ canvas.addEventListener('pointerdown', (e) => {
   if (screen === 'menu') {
     const i = Math.floor((y - 80) / 18);
     if (x >= 14 && x <= 246 && y >= 80 && i < UPGRADES.length) tryBuy(i);
+    else if (y >= 262) startTutorial();
     else if (y > 214) press(input.touch.active || x < canvas.width / 2 ? 'Space' : 'Enter');
   } else if (screen === 'summary') press('Space');
   else if (screen === 'play' && paused) paused = false;
@@ -196,12 +223,17 @@ function frame(now) {
       update(run, input.players(run.players.length), STEP);
       acc -= STEP;
     }
+    if (tut && !paused && updateTutorial(tut, run, run.events, dt)) {
+      SFX.contract();
+      if (!tut.done) R.toast('Nice!');
+    }
     drainEvents();
     R.drawGame(run, paused ? 0 : dt);
-    if (paused) R.drawPause(input.device);
+    if (tut && !tut.done) R.drawTutorial(run, tutorialHint(tut, run), tutorialTarget(tut, run), device());
+    if (paused) R.drawPause(device());
     if (run.over) endRun();
   } else if (screen === 'menu') {
-    R.drawMenu(save, msg, now / 1000, input.touch.active ? 'touch' : input.device, sel);
+    R.drawMenu(save, msg, now / 1000, device(), sel);
   } else {
     R.drawSummary(run, now / 1000);
   }
@@ -216,6 +248,8 @@ window.__digsite = {
   get save() { return save; },
   get paused() { return paused; },
   start,
+  startTutorial,
+  get tutorial() { return tut; },
   step(seconds, inputs = []) {
     for (let t = 0; t < seconds && run && !run.over; t += STEP) update(run, inputs, STEP);
   },
