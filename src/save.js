@@ -11,6 +11,8 @@ export function freshSave() {
     runs: 0,
     wins: 0,
     tutorialDone: false,
+    requestsDone: 0, // lifetime museum requests filled: unlocks builds, sets the expedition tier
+    bestNight: 0,
   };
 }
 
@@ -37,7 +39,9 @@ export function writeSave(storage, save) {
 export function applyRun(save, run) {
   const out = JSON.parse(JSON.stringify(save));
   out.runs++;
-  if (run.result === 'won') out.wins++;
+  if (run.result === 'left') out.wins++;
+  out.requestsDone = (out.requestsDone || 0) + (run.requestsFilled || 0);
+  out.bestNight = Math.max(out.bestNight || 0, run.night || 0);
   out.funding += run.payout;
   for (const [sp, n] of Object.entries(run.banked)) out.museum[sp] = (out.museum[sp] || 0) + n;
   return out;

@@ -336,3 +336,52 @@ export const woodPileSprite = (n) => gen(14, 8, (x, y) => {
   if ((x - off) % 5 === 4) return '#d9b07a';
   return y % 2 ? '#6e4a2a' : '#8a5f36';
 });
+
+// ---------- structures and gear ----------
+export const wallSprite = () => outline(gen(16, 20, (x, y) => {
+  const post = x % 4;
+  const top = post === 1 || post === 2 ? 0 : 2;
+  if (y < top) return null;
+  if (y >= 17) return '#3a2614';
+  if (y === 8 || y === 13) return '#5e3d22'; // lashings
+  return post === 0 ? '#6e4a2a' : post === 3 ? '#5a3a20' : y < 3 ? '#b88a52' : '#8a5f36';
+}), '#1e1408');
+
+export const spikeSprite = () => outline(gen(16, 20, (x, y) => {
+  const post = x % 4;
+  const tip = Math.abs(post - 1.5) * 2.2;
+  if (y < tip) return null;
+  if (y < 4) return '#d8d0b8';
+  if (y >= 17) return '#3a2614';
+  if (y === 10) return '#5e3d22';
+  return post === 0 ? '#6e4a2a' : post === 3 ? '#5a3a20' : '#8a5f36';
+}), '#1e1408');
+
+export const stoneWallSprite = () => outline(gen(16, 18, (x, y) => {
+  const row = Math.floor(y / 4), off = row % 2 ? 4 : 0;
+  if ((x + off) % 8 === 0 || y % 4 === 0) return '#4a463e';
+  return y < 4 ? '#a59c8a' : (x + row) % 5 === 0 ? '#77705f' : '#8d8577';
+}), '#1a1814');
+
+export function torchFrames() {
+  return [0, 1, 2].map((f) => outline(gen(7, 16, (x, y) => {
+    if (y >= 6) return x === 3 ? (y > 13 ? '#3a2614' : '#6e4a2a') : null;
+    const w = [1, 2, 3, 2, 1, 1][y] + (f === 1 && y === 2 ? 1 : 0);
+    if (Math.abs(x - 3 - (f === 2 && y < 3 ? 1 : 0)) > w - 1) return null;
+    return y < 2 ? '#fff3b0' : y < 4 ? '#ffc53d' : '#ff7a1a';
+  }), '#2a1408'));
+}
+
+export const stoneSprite = () => pix(['.sss.', 'sSsss', '.sss.'], { s: '#8d8577', S: '#bdb39e' });
+
+const ICON_ROWS = {
+  axe: ['..mm.....', '.mmmm....', '..mmw....', '....w....', '....w....', '....w....', '....w....'],
+  pickaxe: ['.mmmmmm..', 'm...w..m.', '....w....', '....w....', '....w....', '....w....', '....w....'],
+  spear: ['.......m.', '......mm.', '.....w...', '....w....', '...w.....', '..w......', '.w.......'],
+  sling: ['w.....w..', '.w...w...', '..w.w....', '...s.....', '..sss....', '...s.....', '.........'],
+  flare: ['...f.....', '..fyf....', '...f.....', '..rrr....', '..rrr....', '..rrr....', '..rrr....'],
+};
+export function iconSprites() {
+  const pal = { m: '#c8c8c0', w: '#8a5f36', s: '#8d8577', f: '#ff7a1a', y: '#fff3b0', r: '#d0381a' };
+  return Object.fromEntries(Object.entries(ICON_ROWS).map(([k, rows]) => [k, outline(pix(rows, pal))]));
+}

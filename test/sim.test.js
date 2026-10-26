@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { newRun, update, nightRoster, stats } from '../src/game.js';
+import { newRun, update, nightRoster, stats, leave, buildList, buildTarget, tierFor } from '../src/game.js';
 import { blocked, treeNear, TILE, T } from '../src/world.js';
 import { CFG, DINOS, TRAITS, TRAIT_POOL } from '../src/data.js';
 import { freshSave, applyRun, buy, loadSave, collection, perks } from '../src/save.js';
@@ -8,7 +8,7 @@ import { freshSave, applyRun, buy, loadSave, collection, perks } from '../src/sa
 const STEP = 1 / 60;
 const run = (s, secs, inputs = []) => { for (let t = 0; t < secs && !s.over; t += STEP) update(s, inputs, STEP); };
 const toNight = (s) => { s.t = CFG.dayLen; update(s, [], STEP); };
-const fakeRaptor = (x, y, kind = 'raptor') => ({ kind, x, y, carry: null, stealCd: 0, spitCd: 0, heading: 0, wanderH: 0, wanderT: 9, stun: 0, cd: 0, mode: 'wander' });
+const fakeRaptor = (x, y, kind = 'raptor') => ({ kind, x, y, hp: DINOS[kind].hp, scared: 0, carry: null, stealCd: 0, spitCd: 0, heading: 0, wanderH: 0, wanderT: 9, stun: 0, cd: 0, mode: 'wander' });
 
 // Find a walkable spot at least `minD` px from camp.
 function openSpot(s, minD) {
@@ -155,16 +155,31 @@ test('co-op: a teammate revives a downed player', () => {
   assert.equal(b.hp, 1);
 });
 
-test('surviving every night clears the island with a bonus', () => {
+test('nights never end the run; leaving by day pays a bonus per night survived', () => {
   const s = newRun({ trait: 'none', seed: 3 });
   s.funding = 100;
-  for (let n = 0; n < CFG.nights; n++) {
+  for (let n = 0; n < 4; n++) {
     run(s, CFG.dayLen + 0.1);
     s.dinos = [];
     for (let t = 0; t < CFG.nightLen + 0.1 && !s.over; t += STEP) { update(s, [], STEP); s.dinos = []; }
   }
-  assert.equal(s.result, 'won');
-  assert.equal(s.payout, Math.round(100 * CFG.winBonus));
+  assert.equal(s.over, false);
+  assert.equal(s.night, 4);
+  assert.equal(s.phase, 'day');
+  assert.ok(leave(s));
+  assert.equal(s.result, 'left');
+  assert.equal(s.payout, Math.round(100 * (1 + CFG.leaveBonus * 4)));
+});
+
+test('the boat only comes by day; dying keeps half', () => {
+  const s = newRun({ trait: 'none', seed: 3 });
+  s.funding = 100;
+  toNight(s);
+  assert.equal(leave(s), false);
+  s.players[0].down = true;
+  update(s, [{}], STEP);
+  assert.equal(s.result, 'lost');
+  assert.equal(s.payout, Math.round(100 * CFG.deathKeep));
 });
 
 test('museum keeps bones and funding across runs', () => {
@@ -231,18 +246,19 @@ function treeSpot(s) {
   throw new Error('no tree spot');
 }
 
-test('chop wood; logs stockpiled by day feed the fire at dusk', () => {
+test('chop wood; logs stocked by day, the fire burns some at dusk', () => {
   const s = newRun({ trait: 'none', seed: 3 });
   const p = s.players[0];
   Object.assign(p, treeSpot(s));
-  run(s, CFG.chopTime * 2 + 0.1, [{ dig: true }]);
-  assert.equal(p.carry.filter((c) => c.sp === 'wood').length, 2);
+  run(s, CFG.chopTime * 3 + 0.1, [{ dig: true }]);
+  assert.equal(p.carry.filter((c) => c.sp === 'wood').length, 3);
   Object.assign(p, { x: s.world.camp.x, y: s.world.camp.y });
   update(s, [{}], STEP);
-  assert.equal(s.woodPile, 2);
+  assert.equal(s.stock.wood, 3);
   assert.equal(s.funding, 0, 'wood is not money');
   toNight(s);
-  assert.ok(Math.abs(s.fuel - (1 + 2 * CFG.woodFuel)) < 0.02);
+  assert.equal(s.stock.wood, 3 - CFG.duskBurn);
+  assert.ok(Math.abs(s.fuel - (1 + CFG.duskBurn * CFG.woodFuel)) < 0.02);
 });
 
 test('logs added at night keep the fire burning longer', () => {
@@ -257,17 +273,20 @@ test('logs added at night keep the fire burning longer', () => {
 
 test('every dinosaur kind has stats and appears in some night roster', () => {
   const seen = new Set();
-  for (let n = 1; n <= CFG.nights; n++) for (const [k, c] of Object.entries(nightRoster(n))) if (c) seen.add(k);
+  for (let n = 1; n <= 6; n++) for (const [k, c] of Object.entries(nightRoster(n))) if (c) seen.add(k);
   seen.add('compy'); // compies come by day
   assert.deepEqual([...seen].sort(), Object.keys(DINOS).sort());
+  for (const k of Object.keys(DINOS)) assert.ok(DINOS[k].hp > 0, `${k} has hp`);
 });
 
-test('night roster grows each night and the rex comes on the last night', () => {
-  const r1 = nightRoster(1), r3 = nightRoster(CFG.nights);
+test('night roster keeps growing (capped) and a rex comes every third night', () => {
+  const r1 = nightRoster(1), r3 = nightRoster(3), r6 = nightRoster(6), r40 = nightRoster(40);
   assert.equal(r1.rex, 0);
   assert.equal(r1.spitter, 0);
   assert.equal(r3.rex, 1);
-  assert.ok(r3.raptor > r1.raptor);
+  assert.equal(r6.rex, 1);
+  assert.ok(r6.raptor > r1.raptor);
+  assert.ok(r40.raptor <= 12 && r40.spitter <= 5, 'capped');
   assert.ok(nightRoster(1, 2).raptor > r1.raptor, 'tier adds raptors');
 });
 
@@ -409,7 +428,7 @@ test('higher expedition tiers pay more per bone', () => {
   s.players[0].carry = [{ sp: 'raptor', mult: 1 }];
   Object.assign(s.players[0], { x: s.world.camp.x, y: s.world.camp.y });
   update(s, [{}], STEP);
-  assert.equal(s.funding, Math.round(10 * (1 + 2 * CFG.tierValue)));
+  assert.equal(s.funding, Math.round(5 * (1 + 2 * CFG.tierValue)));
 });
 
 test('finished skeletons grant perks', () => {
@@ -420,4 +439,220 @@ test('finished skeletons grant perks', () => {
   assert.ok(stats({}, ['raptor']).speed > stats({}, []).speed);
   assert.ok(stats({}, ['trike']).stun > CFG.stunTime);
   assert.ok(!collection(save).some((c) => c.id === 'amber'));
+});
+
+// ---------- building, combat, requests ----------
+
+function rockSpot(s) {
+  const w = s.world;
+  for (let i = 0; i < w.w * w.h; i++) {
+    if (!w.reach[i]) continue;
+    const x = ((i % w.w) + 0.5) * TILE, y = (((i / w.w) | 0) + 0.5) * TILE;
+    if (blocked(w, x, y, 12)) continue;
+    if (w.sites.some((st) => Math.hypot(st.x - x, st.y - y) < CFG.digR + 5)) continue;
+    if (treeNear(w, x, y, CFG.chopR)) continue;
+    if ([[1, 0], [-1, 0], [0, 1], [0, -1]].some(([dx, dy]) => w.tiles[((i / w.w) | 0) * w.w + (i % w.w) + dx + dy * w.w] === T.ROCK)) return { x, y };
+  }
+  throw new Error('no rock spot');
+}
+// A run where everything is unlocked and the camp is stocked.
+function builder(extra = {}) {
+  const s = newRun({ trait: 'none', seed: 3, requestsDone: 20, tier: 0, ...extra });
+  s.stock = { wood: 50, stone: 50 };
+  return s;
+}
+// Open build mode, cycle to an item, and press dig once.
+function buildItem(s, id, p = s.players[0]) {
+  const press = (inp) => { update(s, [inp], STEP); update(s, [{}], STEP); };
+  if (p.build === null) press({ build: true });
+  for (let i = 0; i < 20 && buildList(s)[p.build].id !== id; i++) press({ trap: true });
+  assert.equal(buildList(s)[p.build].id, id);
+  press({ dig: true });
+}
+
+test('mine stone from rocks and stock it at camp; a pickaxe mines twice as fast', () => {
+  const s = newRun({ trait: 'none', seed: 3 });
+  const p = s.players[0];
+  Object.assign(p, rockSpot(s));
+  run(s, CFG.mineTime + 0.05, [{ dig: true }]);
+  assert.deepEqual(p.carry.map((c) => c.sp), ['stone']);
+  Object.assign(p, { x: s.world.camp.x, y: s.world.camp.y });
+  update(s, [{}], STEP);
+  assert.equal(s.stock.stone, 1);
+  s.owned.pickaxe = true;
+  Object.assign(p, rockSpot(s));
+  run(s, CFG.mineTime / 2 + 0.05, [{ dig: true }]);
+  assert.equal(p.carry.length, 1);
+});
+
+test('builds unlock with requests filled; tools and weapons craft once', () => {
+  const fresh = newRun({ trait: 'none', seed: 3 });
+  assert.deepEqual(buildList(fresh).map((b) => b.id), ['snare', 'torch']);
+  const s = builder();
+  assert.ok(buildList(s).some((b) => b.id === 'stonewall'));
+  buildItem(s, 'spear');
+  assert.ok(s.owned.spear);
+  assert.ok(!buildList(s).some((b) => b.id === 'spear'));
+  assert.equal(s.stock.wood, 48);
+  assert.equal(s.stock.stone, 49);
+});
+
+test('you cannot build without the materials', () => {
+  const s = builder();
+  s.stock = { wood: 1, stone: 0 };
+  Object.assign(s.players[0], openSpot(s, 300));
+  buildItem(s, 'wall');
+  assert.equal(s.structures.length, 0);
+  assert.equal(s.stock.wood, 1);
+});
+
+test('a wall goes on the tile you face, not by the fire or on a dig site', () => {
+  const s = builder();
+  const p = s.players[0];
+  Object.assign(p, openSpot(s, 300), { fx: 1, fy: 0 });
+  buildItem(s, 'wall');
+  assert.equal(s.structures.length, 1);
+  assert.equal(s.structures[0].tx, Math.floor((p.x + TILE * 0.9) / TILE));
+  Object.assign(p, { x: s.world.camp.x - 20, y: s.world.camp.y, fx: 1, fy: 0 });
+  assert.equal(buildTarget(s, p).why, 'fire');
+  const site = s.world.sites[0];
+  Object.assign(p, { x: site.x - TILE, y: site.y, fx: 1, fy: 0 });
+  assert.equal(buildTarget(s, p).why, 'site');
+});
+
+test('a raptor tears down a wood wall to reach you', () => {
+  const s = builder();
+  toNight(s);
+  const spot = openSpot(s, 400);
+  const p = s.players[0];
+  Object.assign(p, spot, { fx: 1, fy: 0 });
+  buildItem(s, 'wall');
+  const wall = s.structures[0];
+  const r = fakeRaptor(wall.x + 50, wall.y);
+  r.heading = Math.PI;
+  s.dinos = [r];
+  run(s, 3, [{}]);
+  assert.equal(p.hp, s.st.hp, 'the wall held for a while');
+  assert.ok(wall.hp < wall.maxHp, 'the raptor is tearing at it');
+  run(s, 6, [{}]);
+  assert.equal(s.structures.length, 0, 'torn down');
+  assert.ok(p.hp < s.st.hp, 'then it got through');
+});
+
+test('a spike wall routs a raptor before it breaks through', () => {
+  const s = builder();
+  toNight(s);
+  const spot = openSpot(s, 400);
+  const p = s.players[0];
+  Object.assign(p, spot, { fx: 1, fy: 0 });
+  buildItem(s, 'spikes');
+  const wall = s.structures[0];
+  const r = fakeRaptor(wall.x + 50, wall.y);
+  r.heading = Math.PI;
+  s.dinos = [r];
+  run(s, 6, [{}]);
+  assert.ok(r.routed || s.dinos.length === 0);
+  assert.equal(s.structures.length, 1);
+  assert.equal(p.hp, s.st.hp);
+});
+
+test('the spear knocks back and routs a raptor after enough hits', () => {
+  const s = builder();
+  s.owned.spear = true;
+  toNight(s);
+  const spot = openSpot(s, 400);
+  const p = s.players[0];
+  Object.assign(p, spot, { fx: 1, fy: 0 });
+  const r = fakeRaptor(spot.x + 25, spot.y);
+  s.dinos = [r];
+  for (let i = 0; i < 3; i++) {
+    Object.assign(r, { x: p.x + 25, y: p.y, cd: 1 });
+    update(s, [{ attack: true }], STEP);
+    run(s, CFG.attackCd + 0.05, [{}]);
+  }
+  assert.ok(r.routed, `hp ${r.hp}`);
+  run(s, 6, [{}]);
+  assert.equal(s.dinos.length, 0, 'a routed raptor leaves');
+});
+
+test('the sling spends stone and stuns from range', () => {
+  const s = builder();
+  s.owned.sling = true;
+  s.stock.stone = 1;
+  toNight(s);
+  const spot = openSpot(s, 400);
+  const p = s.players[0];
+  Object.assign(p, spot, { fx: 1, fy: 0 });
+  const r = fakeRaptor(spot.x + 60, spot.y);
+  r.cd = 5;
+  s.dinos = [r];
+  update(s, [{ attack: true }], STEP);
+  assert.equal(s.stock.stone, 0);
+  run(s, 0.3, [{}]);
+  assert.ok(r.stun > 0 && r.hp < DINOS.raptor.hp);
+  run(s, 1, [{}]);
+  update(s, [{ attack: true }], STEP);
+  assert.ok(s.events.some((e) => e.type === 'noammo'));
+});
+
+test('a flare sends nearby dinosaurs running', () => {
+  const s = builder();
+  toNight(s);
+  const spot = openSpot(s, 400);
+  Object.assign(s.players[0], spot);
+  const r = fakeRaptor(spot.x + 60, spot.y);
+  s.dinos = [r];
+  buildItem(s, 'flare');
+  assert.ok(r.scared > 0);
+  const d0 = Math.hypot(r.x - spot.x, r.y - spot.y);
+  run(s, 1.5, [{}]);
+  assert.ok(Math.hypot(r.x - spot.x, r.y - spot.y) > d0 + 60);
+  assert.equal(s.players[0].hp, s.st.hp);
+});
+
+test('a lit torch keeps raptors off you at night', () => {
+  const s = builder();
+  const spot = openSpot(s, 400);
+  const p = s.players[0];
+  Object.assign(p, spot, { fx: 1, fy: 0 });
+  buildItem(s, 'torch');
+  toNight(s);
+  const t = s.structures[0];
+  Object.assign(p, { x: t.x - 10, y: t.y });
+  s.dinos = [fakeRaptor(t.x + 140, t.y)];
+  s.dinos[0].heading = Math.PI;
+  run(s, 6, [{}]);
+  assert.equal(p.hp, s.st.hp);
+});
+
+test('an axe chops twice as fast', () => {
+  const s = newRun({ trait: 'none', seed: 3 });
+  s.owned.axe = true;
+  Object.assign(s.players[0], treeSpot(s));
+  run(s, CFG.chopTime / 2 + 0.05, [{ dig: true }]);
+  assert.equal(s.players[0].carry.length, 1);
+});
+
+test('requests chain, pay, and unlock the next build', () => {
+  const s = newRun({ trait: 'none', seed: 3 });
+  const c = s.contract;
+  assert.equal(c.unlock, 'axe');
+  s.st.cap = 20;
+  s.players[0].carry = Array.from({ length: c.need }, () => ({ sp: c.sp, mult: 1 }));
+  Object.assign(s.players[0], { x: s.world.camp.x, y: s.world.camp.y });
+  update(s, [{}], STEP);
+  assert.equal(s.requestsFilled, 1);
+  assert.deepEqual(s.unlocked, ['axe']);
+  assert.ok(buildList(s).some((b) => b.id === 'axe'), 'unlocked mid-run');
+  assert.ok(s.contract && s.contract !== c && s.contract.idx === 1, 'next request appears');
+  assert.equal(s.contract.unlock, 'wall');
+  s.result = 'left'; s.payout = 0;
+  const save = applyRun(freshSave(), s);
+  assert.equal(save.requestsDone, 1);
+});
+
+test('expedition tier follows lifetime requests', () => {
+  assert.equal(tierFor(0), 0);
+  assert.equal(tierFor(CFG.requestsPerTier), 1);
+  assert.equal(newRun({ trait: 'none', seed: 3, requestsDone: 7 }).tier, 2);
 });

@@ -1,7 +1,7 @@
 // Pure simulation: no DOM, so it runs in tests and in the browser alike.
 import { mulberry32 } from './rng.js';
-import { makeWorld, blocked, tileAt, spawnPoint, treeNear, T } from './world.js';
-import { CFG, DINOS, TRAITS, TRAIT_POOL, FOSSILS, speciesById } from './data.js';
+import { makeWorld, blocked, tileAt, spawnPoint, treeNear, tileNear, T, TILE } from './world.js';
+import { CFG, DINOS, TRAITS, TRAIT_POOL, FOSSILS, BUILDS, buildById, speciesById } from './data.js';
 
 const dist = (a, b) => Math.hypot(a.x - b.x, a.y - b.y);
 const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
@@ -21,28 +21,39 @@ export function stats(up = {}, perks = []) {
   };
 }
 
-// How many of each kind hunt on night n.
+export const tierFor = (requestsDone) => Math.min(6, Math.floor(requestsDone / CFG.requestsPerTier));
+
+// How many of each kind hunt on night n. Nights never stop, so it keeps
+// climbing (with caps); a rex comes every third night.
 export function nightRoster(n, tier = 0, trait = {}) {
   return {
-    raptor: 1 + 2 * n + tier + (trait.extraRaptors || 0),
-    spitter: n >= 2 ? n - 1 + Math.floor(tier / 2) : 0,
-    rex: n >= CFG.nights || (tier >= 2 && n >= 2) ? 1 : 0,
+    raptor: Math.min(12, 1 + 2 * n + tier + (trait.extraRaptors || 0)),
+    spitter: n >= 2 ? Math.min(5, n - 1 + Math.floor(tier / 2)) : 0,
+    rex: n % 3 === 0 || (tier >= 2 && n >= 2 && n % 3 === 2) ? 1 + Math.floor(n / 9) : 0,
   };
 }
 
-function pickContract(world, rng, tier) {
+// Requests chain: fill one and the next appears. idx is the lifetime count,
+// so they grow with you across runs.
+function pickContract(world, rng, idx, valueMult) {
   const avail = {};
   for (const s of world.sites) if (s.species !== 'amber') avail[s.species] = (avail[s.species] || 0) + s.bones;
-  const options = FOSSILS.filter((f) => (avail[f.id] || 0) >= 3);
+  const want = Math.min(8, 3 + Math.floor(idx / 2));
+  let options = FOSSILS.filter((f) => (avail[f.id] || 0) >= want);
+  if (!options.length) options = FOSSILS.filter((f) => (avail[f.id] || 0) >= 2);
   if (!options.length) return null;
   const sp = options[Math.floor(rng() * options.length)];
-  const need = Math.min(avail[sp.id], 3 + Math.floor(rng() * 2) + Math.min(2, tier));
-  return { sp: sp.id, need, have: 0, bonus: Math.round(need * sp.value * 1.5), done: false };
+  const need = Math.min(avail[sp.id], want);
+  return {
+    sp: sp.id, need, have: 0, idx, done: false,
+    bonus: Math.round(need * sp.value * CFG.requestBonus * valueMult),
+    unlock: BUILDS.find((b) => b.unlock === idx + 1)?.id || null,
+  };
 }
 
-export function newRun({ seed = 1, players = 1, upgrades = {}, perks = [], tier = 0, trait, tutorial = false } = {}) {
+export function newRun({ seed = 1, players = 1, upgrades = {}, perks = [], requestsDone = 0, tier, trait, tutorial = false } = {}) {
   const rng = mulberry32(seed);
-  // Island trait and contract use their own stream so they never shift the world.
+  // Island trait and first request use their own stream so they never shift the world.
   const side = mulberry32((seed ^ 0x2545f491) >>> 0);
   const traitId = tutorial ? 'none' : trait ?? TRAIT_POOL[Math.floor(side() * TRAIT_POOL.length)];
   const tr = TRAITS[traitId];
@@ -51,20 +62,24 @@ export function newRun({ seed = 1, players = 1, upgrades = {}, perks = [], tier 
     amberChance: tr.amberChance ?? CFG.amberChance,
   });
   const st = stats(upgrades, perks);
+  const t = tier ?? tierFor(requestsDone);
+  const valueMult = 1 + CFG.tierValue * t;
   const ps = [];
   for (let i = 0; i < players; i++) {
     ps.push({
       id: i, x: world.camp.x + (players > 1 ? (i ? 18 : -18) : 0), y: world.camp.y + 30,
-      hp: st.hp, carry: [], digT: 0, chopT: 0, down: false, reviveT: 0, invuln: 0, slow: 0,
-      traps: st.traps, trapHeld: false, moving: false, fx: 0, fy: 1,
+      hp: st.hp, carry: [], digT: 0, chopT: 0, mineT: 0, down: false, reviveT: 0, invuln: 0, slow: 0,
+      traps: st.traps, held: {}, moving: false, fx: 0, fy: 1, build: null, atkCd: 0, swing: 0,
     });
   }
   return {
-    seed, rng, world, st, players: ps, dinos: [], traps: [], drops: [], spits: [],
-    trait: traitId, tier, valueMult: 1 + CFG.tierValue * tier,
-    contract: tutorial ? null : pickContract(world, side, tier),
-    phase: 'day', t: 0, night: 0, fire: st.fireR, fuel: 1, woodPile: 0, time: 0,
-    dayLen: CFG.dayLen, nightLen: tutorial ? 30 : CFG.nightLen, nights: tutorial ? 1 : CFG.nights,
+    seed, rng, world, st, players: ps, dinos: [], traps: [], drops: [], spits: [], shots: [], flares: [],
+    structures: [], structAt: new Map(), stock: { wood: 0, stone: 0 }, owned: {},
+    trait: traitId, tier: t, valueMult,
+    reqBase: requestsDone, requestsFilled: 0, unlocked: [],
+    contract: tutorial ? null : pickContract(world, side, requestsDone, valueMult),
+    phase: 'day', t: 0, night: 0, fire: st.fireR, fuel: 1, time: 0,
+    dayLen: CFG.dayLen, nightLen: tutorial ? 30 : CFG.nightLen, nights: tutorial ? 1 : Infinity,
     // Tutorial: one short night, one raptor, no deaths, and the day waits
     // (hold) until the tutorial overlay says it's time for dusk.
     tutorial: tutorial ? { hold: true } : null,
@@ -73,23 +88,102 @@ export function newRun({ seed = 1, players = 1, upgrades = {}, perks = [], tier 
   };
 }
 
+// ---------- structures ----------
+
+const unlockLevel = (s) => s.reqBase + s.requestsFilled;
+const keyOf = (s, tx, ty) => ty * s.world.w + tx;
+
+// What this player can build right now, in menu order.
+export function buildList(s) {
+  const lvl = unlockLevel(s);
+  return BUILDS.filter((b) => b.unlock <= lvl && !((b.kind === 'tool' || b.kind === 'weapon') && s.owned[b.id]));
+}
+
+export const canAfford = (s, b) => Object.entries(b.cost).every(([k, n]) => (s.stock[k] || 0) >= n);
+
+// The tile in front of the player, and whether a structure can go there.
+export function buildTarget(s, p) {
+  const tx = Math.floor((p.x + p.fx * TILE * 0.9) / TILE);
+  const ty = Math.floor((p.y + p.fy * TILE * 0.9) / TILE);
+  const x = (tx + 0.5) * TILE, y = (ty + 0.5) * TILE;
+  let why = null;
+  if (tx < 0 || ty < 0 || tx >= s.world.w || ty >= s.world.h || blocked(s.world, x, y, 2)) why = 'blocked';
+  else if (s.structAt.has(keyOf(s, tx, ty))) why = 'taken';
+  else if (dist({ x, y }, s.world.camp) < 40) why = 'fire';
+  else if (s.world.sites.some((st) => st.bones > 0 && dist(st, { x, y }) < TILE * 0.7)) why = 'site';
+  return { tx, ty, x, y, ok: !why, why };
+}
+
+function placeStructure(s, b, tg) {
+  const st = { kind: b.id, tx: tg.tx, ty: tg.ty, x: tg.x, y: tg.y, hp: b.hp || 1, maxHp: b.hp || 1, solid: !!b.solid, life: b.id === 'torch' ? CFG.torchLife : 0 };
+  s.structures.push(st);
+  s.structAt.set(keyOf(s, tg.tx, tg.ty), st);
+  return st;
+}
+
+function removeStructure(s, st) {
+  s.structures = s.structures.filter((x) => x !== st);
+  s.structAt.delete(keyOf(s, st.tx, st.ty));
+}
+
+const solidAt = (s, x, y) => {
+  const st = s.structAt.get(keyOf(s, Math.floor(x / TILE), Math.floor(y / TILE)));
+  return st && st.solid ? st : null;
+};
+// A wall blocks the middle of its tile (structR each way), so you can see it's a post.
+function wallHit(s, x, y, r) {
+  for (const [ox, oy] of [[-r, -r], [r, -r], [-r, r], [r, r], [0, 0]]) {
+    const st = solidAt(s, x + ox, y + oy);
+    if (st && Math.abs(x - st.x) < CFG.structR + r && Math.abs(y - st.y) < CFG.structR + r) return st;
+  }
+  return null;
+}
+
+// Building, crafting and using all go through here. Returns an event type.
+function act(s, p, b) {
+  if (!canAfford(s, b)) return 'cantafford';
+  if (b.kind === 'place') {
+    const tg = buildTarget(s, p);
+    if (b.id === 'snare') {
+      if (blocked(s.world, tg.x, tg.y, 2)) return 'cantbuild';
+      s.traps.push({ x: tg.x, y: tg.y, armed: true });
+    } else {
+      if (!tg.ok) return 'cantbuild';
+      placeStructure(s, b, tg);
+    }
+  } else if (b.kind === 'tool' || b.kind === 'weapon') {
+    s.owned[b.id] = true;
+  } else if (b.id === 'flare') {
+    s.flares.push({ x: p.x, y: p.y, t: b.time });
+    for (const r of s.dinos) {
+      if (dist(r, p) < b.scareR) { r.scared = b.time; r.fleeFrom = { x: p.x, y: p.y }; if (r.carry) { dropItem(s, r.x, r.y, r.carry); r.carry = null; } }
+    }
+  }
+  for (const [k, n] of Object.entries(b.cost)) s.stock[k] -= n;
+  return 'built';
+}
+
+// ---------- shared helpers ----------
+
 // Move along each axis separately so you slide along walls.
-function move(world, e, dx, dy, r) {
+function move(world, e, dx, dy, r, s = null) {
   let hit = false;
-  if (!blocked(world, e.x + dx, e.y, r)) e.x += dx; else hit = true;
-  if (!blocked(world, e.x, e.y + dy, r)) e.y += dy; else hit = true;
+  const stop = (x, y) => blocked(world, x, y, r) || (s && wallHit(s, x, y, r));
+  if (!stop(e.x + dx, e.y)) e.x += dx; else hit = true;
+  if (!stop(e.x, e.y + dy)) e.y += dy; else hit = true;
   return hit;
 }
 
 const fireScares = (s) => s.phase === 'night' && s.fire > CFG.fireSafeMin;
 const inFire = (s, p) => fireScares(s) && dist(p, s.world.camp) < s.fire;
 const traitOf = (s) => TRAITS[s.trait];
+const litTorches = (s) => s.structures.filter((x) => x.kind === 'torch' && x.life > 0);
 
 function spawn(s, kind) {
   const sp = spawnPoint(s.world, s.rng);
   const d = {
-    kind, x: sp.x, y: sp.y, heading: s.rng.range(-Math.PI, Math.PI),
-    wanderH: 0, wanderT: 0, stun: 0, cd: 0, mode: 'wander', carry: null, stealCd: 0, spitCd: 1,
+    kind, x: sp.x, y: sp.y, heading: s.rng.range(-Math.PI, Math.PI), hp: DINOS[kind].hp,
+    wanderH: 0, wanderT: 0, stun: 0, cd: 0, mode: 'wander', carry: null, stealCd: 0, spitCd: 1, scared: 0,
   };
   s.dinos.push(d);
   return d;
@@ -104,16 +198,18 @@ function startNight(s) {
   s.phase = 'night';
   s.t = 0;
   s.night++;
-  s.fuel = 1 + Math.min(1, s.woodPile * CFG.woodFuel);
-  s.woodPile = 0;
+  const burn = Math.min(CFG.duskBurn, s.stock.wood);
+  s.stock.wood -= burn;
+  s.fuel = 1 + burn * CFG.woodFuel;
   s.fire = s.st.fireR;
   for (const p of s.players) p.traps = s.st.traps;
+  for (const st of s.structures) if (st.kind === 'torch') st.life = CFG.torchLife;
   // Compies scatter at dusk, dropping anything they stole.
   for (const d of s.dinos) if (d.carry) dropItem(s, d.x, d.y, d.carry);
   s.dinos = [];
   const roster = s.tutorial ? { raptor: 1 } : nightRoster(s.night, s.tier, traitOf(s));
   for (const [kind, n] of Object.entries(roster)) for (let i = 0; i < n; i++) spawn(s, kind);
-  s.events.push({ type: 'night', n: s.night });
+  s.events.push({ type: 'night', n: s.night, burned: burn });
   if (roster.rex) s.events.push({ type: 'rexwarn' });
 }
 
@@ -130,13 +226,23 @@ function endNight(s) {
   s.events.push({ type: 'dawn', n: s.night });
 }
 
+// result: 'left' (took the boat by day), 'lost' (everyone down), 'won' (tutorial).
 export function finish(s, result) {
   if (s.over) return;
   s.over = true;
   s.result = result;
   for (const p of s.players) p.carry = [];
-  s.payout = result === 'won' ? Math.round(s.funding * CFG.winBonus) : s.funding;
+  if (result === 'left') s.payout = Math.round(s.funding * (1 + CFG.leaveBonus * s.night));
+  else if (result === 'lost') s.payout = Math.round(s.funding * CFG.deathKeep);
+  else s.payout = Math.round(s.funding * CFG.winBonus);
   s.events.push({ type: result });
+}
+
+// The boat only comes by day.
+export function leave(s) {
+  if (s.over || s.phase !== 'day' || s.tutorial) return false;
+  finish(s, 'left');
+  return true;
 }
 
 function hurt(s, p, dmg, from) {
@@ -156,7 +262,8 @@ function hurt(s, p, dmg, from) {
     s.events.push({ type: 'rescued', id: p.id });
   } else if (p.hp <= 0) {
     p.down = true;
-    p.digT = p.chopT = 0;
+    p.digT = p.chopT = p.mineT = 0;
+    p.build = null;
     // Bones spill on the ground; a partner can grab them.
     for (const it of p.carry) dropItem(s, p.x, p.y, it);
     p.carry = [];
@@ -164,10 +271,38 @@ function hurt(s, p, dmg, from) {
   }
 }
 
+// A dinosaur at 0 hp is routed: it runs off and leaves for the night.
+function hitDino(s, r, dmg, from, stun = 0, knock = 30) {
+  r.hp -= dmg;
+  r.stun = Math.max(r.stun, stun * (DINOS[r.kind].stunScale || 1));
+  const a = Math.atan2(r.y - from.y, r.x - from.x);
+  move(s.world, r, Math.cos(a) * knock, Math.sin(a) * knock, DINOS[r.kind].r, s);
+  if (r.carry) { dropItem(s, r.x, r.y, r.carry); r.carry = null; }
+  s.events.push({ type: 'hit', kind: r.kind });
+  if (r.hp <= 0 && !r.routed) {
+    r.routed = true;
+    r.stun = 0;
+    r.fleeFrom = { x: from.x, y: from.y };
+    s.events.push({ type: 'routed', kind: r.kind });
+  }
+}
+
+function completeRequest(s, c) {
+  c.done = true;
+  s.requestsFilled++;
+  const unlocked = c.unlock ? buildById[c.unlock] : null;
+  if (unlocked) s.unlocked.push(unlocked.id);
+  s.events.push({ type: 'contract', bonus: c.bonus, unlock: unlocked?.id || null });
+  // The next request in the chain.
+  s.contract = pickContract(s.world, s.rng, unlockLevel(s), s.valueMult);
+  return c.bonus;
+}
+
 function deposit(s, p) {
-  let gained = 0, wood = 0;
+  let gained = 0, wood = 0, stone = 0;
   for (const it of p.carry) {
     if (it.sp === 'wood') { wood++; continue; }
+    if (it.sp === 'stone') { stone++; continue; }
     if (it.sp === 'amber') {
       s.amber++;
       gained += Math.round(CFG.amberValue * s.valueMult);
@@ -179,27 +314,62 @@ function deposit(s, p) {
     const c = s.contract;
     if (c && !c.done && c.sp === it.sp) {
       c.have++;
-      if (c.have >= c.need) {
-        c.done = true;
-        gained += c.bonus;
-        s.events.push({ type: 'contract', bonus: c.bonus });
-      }
+      if (c.have >= c.need) gained += completeRequest(s, c);
     }
   }
   if (wood) {
     if (s.phase === 'night') s.fuel = Math.min(CFG.maxFuel, s.fuel + wood * CFG.woodFuel);
-    else s.woodPile = Math.min(CFG.maxWoodPile, s.woodPile + wood);
+    else s.stock.wood += wood;
     s.events.push({ type: 'wood', id: p.id, n: wood });
+  }
+  if (stone) {
+    s.stock.stone += stone;
+    s.events.push({ type: 'stone', id: p.id, n: stone });
   }
   s.funding += gained;
   p.carry = [];
   if (gained) s.events.push({ type: 'deposit', id: p.id, gained });
 }
 
+// True only on the frame a button goes down.
+function pressed(p, inp, key) {
+  const now = !!inp[key];
+  const edge = now && !p.held[key];
+  p.held[key] = now;
+  return edge;
+}
+
+function attack(s, p) {
+  if (p.atkCd > 0) return;
+  const front = (r) => {
+    const dx = r.x - p.x, dy = r.y - p.y, d = Math.hypot(dx, dy) || 1;
+    return (dx * p.fx + dy * p.fy) / d > -0.2;
+  };
+  if (s.owned.spear) {
+    const near = s.dinos.filter((r) => !r.routed && dist(r, p) < CFG.spearR + DINOS[r.kind].r && front(r));
+    if (near.length || !s.owned.sling) {
+      p.atkCd = CFG.attackCd;
+      p.swing = 0.2;
+      for (const r of near) hitDino(s, r, 1, p, 0.3, 40);
+      s.events.push({ type: 'swing', id: p.id, hits: near.length });
+      return;
+    }
+  }
+  if (s.owned.sling) {
+    if (s.stock.stone <= 0) { s.events.push({ type: 'noammo', id: p.id }); p.atkCd = CFG.attackCd; return; }
+    s.stock.stone--;
+    p.atkCd = CFG.attackCd * 1.6;
+    s.shots.push({ x: p.x, y: p.y, vx: p.fx * CFG.shotSpeed, vy: p.fy * CFG.shotSpeed, life: 0.8, from: p.id });
+    s.events.push({ type: 'shoot', id: p.id });
+  }
+}
+
 function updatePlayer(s, p, inp, dt) {
   p.invuln = Math.max(0, p.invuln - dt);
   p.slow = Math.max(0, p.slow - dt);
-  if (p.down) return;
+  p.atkCd = Math.max(0, p.atkCd - dt);
+  p.swing = Math.max(0, p.swing - dt);
+  if (p.down) { for (const k of ['dig', 'trap', 'build', 'attack']) p.held[k] = !!inp[k]; return; }
 
   let mx = inp.x || 0, my = inp.y || 0;
   const len = Math.hypot(mx, my);
@@ -213,8 +383,35 @@ function updatePlayer(s, p, inp, dt) {
   if (p.slow > 0) speed *= 0.55;
   move(s.world, p, mx * speed * dt, my * speed * dt, CFG.pr);
 
-  // The dig button: revive a partner, else dig a site, else chop a tree.
-  let dug = false, chopped = false;
+  const digPress = pressed(p, inp, 'dig');
+  const trapPress = pressed(p, inp, 'trap');
+  if (pressed(p, inp, 'build')) {
+    p.build = p.build === null && buildList(s).length ? 0 : null;
+    s.events.push({ type: p.build === null ? 'buildoff' : 'buildon', id: p.id });
+  }
+  if (pressed(p, inp, 'attack')) attack(s, p);
+
+  // Build mode: trap cycles, dig builds. Nothing else uses those buttons meanwhile.
+  if (p.build !== null) {
+    const list = buildList(s);
+    if (!list.length) p.build = null;
+    else {
+      p.build %= list.length;
+      if (trapPress) p.build = (p.build + 1) % list.length;
+      if (digPress) {
+        const b = list[p.build];
+        const res = act(s, p, b);
+        s.events.push({ type: res, id: p.id, item: b.id });
+        if (res === 'built' && b.kind !== 'place' && b.kind !== 'use') p.build = Math.min(p.build, buildList(s).length - 1);
+      }
+      p.digT = p.chopT = p.mineT = 0;
+      collectAndBank(s, p);
+      return;
+    }
+  }
+
+  // The dig button: revive a partner, else dig a site, else chop a tree, else mine a rock.
+  let dug = false, chopped = false, mined = false;
   if (inp.dig) {
     const mate = s.players.find((q) => q.down && dist(q, p) < CFG.reviveR);
     if (mate) {
@@ -238,24 +435,35 @@ function updatePlayer(s, p, inp, dt) {
       } else if (treeNear(s.world, p.x, p.y, CFG.chopR)) {
         chopped = true;
         p.chopT += dt;
-        if (p.chopT >= CFG.chopTime) {
+        if (p.chopT >= CFG.chopTime / (s.owned.axe ? 2 : 1)) {
           p.chopT = 0;
           p.carry.push({ sp: 'wood', mult: 1 });
           s.events.push({ type: 'chop', id: p.id });
+        }
+      } else if (tileNear(s.world, p.x, p.y, CFG.mineR, T.ROCK)) {
+        mined = true;
+        p.mineT += dt;
+        if (p.mineT >= CFG.mineTime / (s.owned.pickaxe ? 2 : 1)) {
+          p.mineT = 0;
+          p.carry.push({ sp: 'stone', mult: 1 });
+          s.events.push({ type: 'mine', id: p.id });
         }
       }
     }
   }
   if (!dug) p.digT = 0;
   if (!chopped) p.chopT = 0;
+  if (!mined) p.mineT = 0;
 
-  if (inp.trap && !p.trapHeld && p.traps > 0) {
+  if (trapPress && p.traps > 0) {
     s.traps.push({ x: p.x, y: p.y, armed: true });
     p.traps--;
     s.events.push({ type: 'trap', id: p.id });
   }
-  p.trapHeld = !!inp.trap;
+  collectAndBank(s, p);
+}
 
+function collectAndBank(s, p) {
   for (const d of s.drops) {
     if (!d.taken && p.carry.length < s.st.cap && dist(d, p) < CFG.pickR) {
       d.taken = true;
@@ -263,7 +471,6 @@ function updatePlayer(s, p, inp, dt) {
       s.events.push({ type: 'pickup', id: p.id });
     }
   }
-
   if (p.carry.length && dist(p, s.world.camp) < CFG.campR) deposit(s, p);
 }
 
@@ -282,14 +489,17 @@ function updateDino(s, r, dt) {
   r.cd = Math.max(0, r.cd - dt);
   r.stealCd = Math.max(0, r.stealCd - dt);
   r.spitCd = Math.max(0, r.spitCd - dt);
+  r.scared = Math.max(0, r.scared - dt);
   if (r.stun > 0) { r.stun -= dt; return; }
   const camp = s.world.camp;
   const tr = traitOf(s);
+  const torches = litTorches(s);
+  const nearTorch = (p) => s.phase === 'night' && torches.some((t) => dist(t, p) < CFG.torchR);
 
   let target = null, best = Infinity;
-  if (!(def.thief && r.carry)) {
+  if (!(def.thief && r.carry) && !r.routed && r.scared <= 0) {
     for (const p of s.players) {
-      if (p.down || inFire(s, p)) continue;
+      if (p.down || inFire(s, p) || nearTorch(p)) continue;
       if (def.motionOnly && !p.moving) continue; // the rex can't see you if you freeze
       if (def.thief && (!p.carry.length || r.stealCd > 0)) continue;
       let sight = def.sight * (tr.sight || 1);
@@ -302,15 +512,16 @@ function updateDino(s, r, dt) {
 
   const prevMode = r.mode;
   let desired, sp;
-  if (def.thief && r.carry) {
-    // Run off with the loot.
+  if (r.routed || r.scared > 0 || (def.thief && r.carry)) {
+    // Run away: routed for good, scared by a flare for a while, or a thief with loot.
     r.mode = 'flee';
     const near = nearestPlayer(s, r);
-    desired = near.p ? Math.atan2(r.y - near.p.y, r.x - near.p.x) : r.heading;
-    sp = def.ladenSpeed; // slower with loot, so you can run it down
+    const from = r.routed || r.scared > 0 ? (r.fleeFrom || near.p) : near.p;
+    desired = from ? Math.atan2(r.y - from.y, r.x - from.x) : r.heading;
+    sp = def.thief && r.carry ? def.ladenSpeed : def.speed; // slower with loot, so you can run it down
     if (!near.p || near.d > 700) {
       r.gone = true;
-      s.events.push({ type: 'escaped' });
+      if (r.carry) s.events.push({ type: 'escaped' });
       return;
     }
   } else if (target) {
@@ -331,14 +542,33 @@ function updateDino(s, r, dt) {
   }
   if (r.kind === 'rex' && r.mode === 'chase' && prevMode !== 'chase') s.events.push({ type: 'roar' });
   if (fireScares(s) && dist(r, camp) < s.fire + 24) desired = Math.atan2(r.y - camp.y, r.x - camp.x);
+  if (s.phase === 'night') {
+    for (const t of torches) if (dist(r, t) < CFG.torchR + 16) desired = Math.atan2(r.y - t.y, r.x - t.x);
+  }
 
   const off = angleDiff(desired, r.heading);
   r.heading += clamp(off, -def.turn * dt, def.turn * dt);
   // Up close, brake to turn. Without this a fast, slow-turning biter just
   // orbits a player standing inside its turning circle and never bites.
   if (target && (def.dmg || def.thief) && best < CFG.brakeR) sp *= Math.max(0.15, Math.cos(off));
-  const hit = move(s.world, r, Math.cos(r.heading) * sp * dt, Math.sin(r.heading) * sp * dt, def.r);
-  if (hit && r.mode !== 'chase') {
+  const nx = Math.cos(r.heading) * sp * dt, ny = Math.sin(r.heading) * sp * dt;
+  const hit = move(s.world, r, nx, ny, def.r, s);
+  // Blocked by a wall while hunting: tear it down (spikes bite back).
+  const wall = hit && r.mode === 'chase' ? wallHit(s, r.x + Math.sign(nx) * 4, r.y + Math.sign(ny) * 4, def.r) : null;
+  if (wall && def.wallDps) {
+    wall.hp -= def.wallDps * dt;
+    r.chewing = wall;
+    const b = buildById[wall.kind];
+    if (b.spikes) {
+      r.spikeT = (r.spikeT || 0) + dt;
+      if (r.spikeT >= 1) { r.spikeT = 0; hitDino(s, r, b.spikes, wall, 0, 12); }
+    }
+    if (wall.hp <= 0) {
+      removeStructure(s, wall);
+      s.events.push({ type: 'smash', kind: wall.kind });
+    }
+  } else r.chewing = null;
+  if (hit && r.mode !== 'chase' && !wall) {
     r.heading += (s.rng() < 0.5 ? 1 : -1) * Math.PI / 2;
     r.wanderH = r.heading;
     r.wanderT = 1;
@@ -353,6 +583,7 @@ function updateDino(s, r, dt) {
       r.y = camp.y + Math.sin(a) * s.fire;
     }
   }
+  if (r.routed || r.scared > 0) return;
 
   for (const trap of s.traps) {
     if (trap.armed && dist(trap, r) < CFG.trapR + def.r / 2) {
@@ -395,12 +626,12 @@ function updateDino(s, r, dt) {
   }
 }
 
-function updateSpits(s, dt) {
+function updateProjectiles(s, dt) {
   for (const b of s.spits) {
     b.life -= dt;
     b.x += b.vx * dt;
     b.y += b.vy * dt;
-    if (blocked(s.world, b.x, b.y, 2)) b.life = 0;
+    if (blocked(s.world, b.x, b.y, 2) || wallHit(s, b.x, b.y, 2)) b.life = 0;
     for (const p of s.players) {
       if (b.life <= 0 || p.down || p.invuln > 0 || dist(b, p) > 12) continue;
       b.life = 0;
@@ -409,9 +640,23 @@ function updateSpits(s, dt) {
     }
   }
   s.spits = s.spits.filter((b) => b.life > 0);
+  for (const b of s.shots) {
+    b.life -= dt;
+    b.x += b.vx * dt;
+    b.y += b.vy * dt;
+    if (blocked(s.world, b.x, b.y, 2)) b.life = 0;
+    for (const r of s.dinos) {
+      if (b.life <= 0 || r.routed || dist(b, r) > DINOS[r.kind].r + 6) continue;
+      b.life = 0;
+      hitDino(s, r, 1, b, 1.2, 10);
+    }
+  }
+  s.shots = s.shots.filter((b) => b.life > 0);
+  for (const f of s.flares) f.t -= dt;
+  s.flares = s.flares.filter((f) => f.t > 0);
 }
 
-// inputs: one {x, y, dig, trap} per player.
+// inputs: one {x, y, dig, trap, build, attack} per player.
 export function update(s, inputs, dt) {
   if (s.over) return s;
   s.time += dt;
@@ -422,6 +667,7 @@ export function update(s, inputs, dt) {
   else if (s.phase === 'night') {
     s.fuel = Math.max(0, s.fuel - dt / s.nightLen);
     s.fire = s.st.fireR * clamp(s.fuel, 0, 1);
+    for (const st of s.structures) if (st.kind === 'torch') st.life = Math.max(0, st.life - dt);
     if (s.t >= s.nightLen) endNight(s);
     if (s.over) return s;
   }
@@ -431,7 +677,7 @@ export function update(s, inputs, dt) {
   for (const p of s.players) if (p.down && !p.beingRevived) p.reviveT = Math.max(0, p.reviveT - dt);
   for (const r of s.dinos) updateDino(s, r, dt);
   s.dinos = s.dinos.filter((r) => !r.gone);
-  updateSpits(s, dt);
+  updateProjectiles(s, dt);
   s.traps = s.traps.filter((t) => t.armed);
   s.drops = s.drops.filter((d) => !d.taken);
 

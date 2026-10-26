@@ -1,7 +1,8 @@
 // Pixel-art renderer. Draws at 480x300 and the page scales it up with
 // nearest-neighbour, so every pixel stays crisp. World units are 2x screen px.
 import { T, TILE } from './world.js';
-import { CFG, UPGRADES, TRAITS, DINOS, speciesById, upgradeCost } from './data.js';
+import { CFG, UPGRADES, TRAITS, DINOS, BUILDS, buildById, nextUnlock, speciesById, upgradeCost } from './data.js';
+import { buildList, buildTarget, canAfford, tierFor } from './game.js';
 import { collection } from './save.js';
 import { drawText, textWidth } from './art/font.js';
 import { keyName, fillKeys } from './keys.js';
@@ -31,6 +32,10 @@ export function makeRenderer(cv) {
     amber: SP.amberSprite(),
     spit: SP.spitSprite(),
     woodPile: [0, 1, 2, 3, 4].map((n) => SP.woodPileSprite(n)),
+    struct: { wall: SP.wallSprite(), spikes: SP.spikeSprite(), stonewall: SP.stoneWallSprite() },
+    torch: SP.torchFrames(),
+    stone: SP.stoneSprite(),
+    icons: SP.iconSprites(),
     shadowHuge: SP.shadowSprite(34, 8),
     shadowSmall: SP.shadowSprite(10, 4),
     trees: SP.treeSprites(),
@@ -55,7 +60,11 @@ export function makeRenderer(cv) {
   const species = Object.fromEntries(Object.values(speciesById).map((s) => [s.id, SP.boneSprite(s.color)]));
   species.amber = art.amber;
   species.wood = art.wood;
-  const itemIcon = (it) => (it.mult > 1 && it.sp !== 'wood' && it.sp !== 'amber' ? art.boneGold : species[it.sp]);
+  species.stone = art.stone;
+  // Icon and world sprite for each build.
+  const buildIcon = (id) => ({ snare: art.trap, torch: art.torch[0], wall: art.struct.wall, spikes: art.struct.spikes, stonewall: art.struct.stonewall }[id] || art.icons[id]);
+  for (const b of BUILDS) if (!buildIcon(b.id)) throw new Error(`no icon for build ${b.id}`);
+  const itemIcon = (it) => (it.mult > 1 && species[it.sp] && speciesById[it.sp] && it.sp !== 'amber' ? art.boneGold : species[it.sp]);
   for (const k of Object.keys(DINOS)) if (!art.dinos[k]) throw new Error(`no sprite for dino kind ${k}`);
   const SHADOW = { raptor: 'shadowBig', compy: 'shadowSmall', spitter: 'shadowBig', rex: 'shadowHuge' };
 
@@ -114,6 +123,28 @@ export function makeRenderer(cv) {
       shake = SHAKE_TIME * 2.5;
     } else if (e.type === 'contract') {
       floaters.push({ x: s.world.camp.x / 2, y: s.world.camp.y / 2 - 30, t: 2, text: `REQUEST DONE +$${e.bonus}`, color: '#7dff8a' });
+    } else if (e.type === 'mine' && p) {
+      burst(p.x / 2 + p.fx * 6, p.y / 2 - 4, 7, ['#8d8577', '#bdb39e', '#5d574d'], 45, 0.4, 20);
+      floaters.push({ x: p.x / 2, y: p.y / 2 - 18, t: 0.8, text: '+STONE', color: '#bdb39e' });
+    } else if (e.type === 'built' && p) {
+      const tg = buildTarget(s, p);
+      burst(tg.x / 2, tg.y / 2, 10, ['#d9b07a', '#8a5f36', '#f4ead2'], 35, 0.5, 25);
+    } else if (e.type === 'cantafford' && p) {
+      const b = buildById[e.item];
+      floaters.push({ x: p.x / 2, y: p.y / 2 - 18, t: 1, text: `NEED ${costText(b.cost)}`, color: '#ff8a7a' });
+    } else if (e.type === 'cantbuild' && p) {
+      floaters.push({ x: p.x / 2, y: p.y / 2 - 18, t: 1, text: "CAN'T BUILD THERE", color: '#ff8a7a' });
+    } else if (e.type === 'hit') {
+      shake = Math.max(shake, 0.06);
+    } else if (e.type === 'routed') {
+      const r = s.dinos.find((d) => d.routed && d.kind === e.kind);
+      if (r) floaters.push({ x: r.x / 2, y: r.y / 2 - 24, t: 1.2, text: 'RAN OFF!', color: '#7dff8a' });
+    } else if (e.type === 'smash') {
+      shake = Math.max(shake, 0.2);
+    } else if (e.type === 'swing' && p) {
+      if (e.hits) burst(p.x / 2 + p.fx * 14, p.y / 2 - 6 + p.fy * 10, 8, ['#ffffff', '#ff5a5a'], 50, 0.3, 5);
+    } else if (e.type === 'noammo' && p) {
+      floaters.push({ x: p.x / 2, y: p.y / 2 - 18, t: 1, text: 'NO STONE', color: '#ff8a7a' });
     } else if (e.type === 'revive' && p) {
       burst(p.x / 2, p.y / 2 - 6, 14, ['#7dff8a', '#d0ffd8'], 40, 0.6, 30);
     }
@@ -227,6 +258,9 @@ export function makeRenderer(cv) {
       }
     }
     for (const t of s.traps) blit(art.trap, sx(t.x) - 5, sy(t.y) - 3);
+    for (const f of s.flares) {
+      if (Math.random() < 0.6) particles.push({ x: f.x / 2 + (Math.random() - 0.5) * 4, y: f.y / 2 - 4, vx: (Math.random() - 0.5) * 30, vy: -30 - Math.random() * 30, life: 0.6, color: Math.random() < 0.5 ? '#ff4a3a' : '#ffc53d', g: 40 });
+    }
     for (const d of s.drops) {
       const bob = Math.round(Math.sin(s.time * 4 + d.x) * 1);
       blit(art.shadowSmall, sx(d.x) - 5, sy(d.y) - 1);
@@ -257,6 +291,7 @@ export function makeRenderer(cv) {
     items.push({ y: w.camp.y / 2 - 6, kind: 'tent' }, { y: w.camp.y / 2 - 10, kind: 'crate' }, { y: w.camp.y / 2 + 6, kind: 'fire' }, { y: w.camp.y / 2 + 8, kind: 'pile' });
     for (const p of s.players) items.push({ y: p.y / 2, kind: 'player', p });
     for (const r of s.dinos) items.push({ y: r.y / 2, kind: 'dino', r });
+    for (const st of s.structures) items.push({ y: st.y / 2 + 7, kind: 'struct', st });
     items.sort((a, b) => a.y - b.y);
 
     for (const it of items) {
@@ -279,11 +314,36 @@ export function makeRenderer(cv) {
         ctx.drawImage(img, 0, img.height - h, img.width, h, Math.round(cx - 5), Math.round(cy + 6 - h), img.width, h);
         if (Math.random() < dt * 8 * f) particles.push({ x: cx + (Math.random() - 0.5) * 4, y: cy - 4, vx: (Math.random() - 0.5) * 6, vy: -20 - Math.random() * 15, life: 0.8, color: Math.random() < 0.5 ? '#ffc53d' : '#ff7a1a', g: 0 });
       } else if (it.kind === 'pile') {
-        if (s.woodPile > 0) blit(art.woodPile[Math.min(4, s.woodPile)], cx + 8, cy + 2);
+        if (s.stock.wood > 0) blit(art.woodPile[Math.min(4, s.stock.wood)], cx + 8, cy + 2);
+        for (let i = 0; i < Math.min(5, s.stock.stone); i++) blit(art.stone, cx - 20 + (i % 3) * 5, cy + 6 - Math.floor(i / 3) * 3);
+      } else if (it.kind === 'struct') {
+        const st = it.st;
+        const x = sx(st.x), y = sy(st.y);
+        if (st.kind === 'torch') {
+          const img = art.torch[st.life > 0 && s.phase === 'night' ? Math.floor(s.time * 8) % 3 : 0];
+          blit(img, x - 4, y - 14);
+        } else {
+          const img = art.struct[st.kind];
+          blit(img, x - img.width / 2, y + 9 - img.height);
+          if (st.hp < st.maxHp) bar(x - 7, y - img.height + 4, 14, st.hp / st.maxHp, st.hp / st.maxHp > 0.4 ? '#7dff8a' : '#ff6a5a');
+        }
       } else if (it.kind === 'player') drawPlayer(s, it.p, sx(it.p.x), sy(it.p.y), dt);
       else drawDino(s, it.r, sx(it.r.x), sy(it.r.y), dt);
     }
 
+    for (const b of s.shots) {
+      ctx.fillStyle = '#14110c'; ctx.fillRect(Math.round(sx(b.x)) - 1, Math.round(sy(b.y)) - 7, 3, 3);
+      ctx.fillStyle = '#bdb39e'; ctx.fillRect(Math.round(sx(b.x)) - 1, Math.round(sy(b.y)) - 7, 2, 2);
+    }
+    for (const p of s.players) {
+      if (p.swing <= 0 || p.down) continue;
+      const a0 = Math.atan2(p.fy, p.fx), x = sx(p.x), y = sy(p.y) - 6;
+      ctx.fillStyle = '#ffffff';
+      for (let i = -3; i <= 3; i++) {
+        const a = a0 + i * 0.28 * (1 - p.swing * 2);
+        ctx.fillRect(Math.round(x + Math.cos(a) * 16), Math.round(y + Math.sin(a) * 16), 1, 1);
+      }
+    }
     for (const b of s.spits) {
       blit(art.spit, sx(b.x) - 1, sy(b.y) - 7);
       if (Math.random() < 0.5) particles.push({ x: b.x / 2, y: b.y / 2 - 6, vx: 0, vy: 0, life: 0.25, color: '#5ea02a', g: 0 });
@@ -311,6 +371,8 @@ export function makeRenderer(cv) {
     const tr = TRAITS[s.trait];
     const lantern = 52 * s.st.lantern * (tr.light || 1);
     for (const p of s.players) if (!p.down) lights.push({ x: sx(p.x), y: sy(p.y) - 6, r: lantern });
+    for (const st of s.structures) if (st.kind === 'torch' && st.life > 0 && s.phase === 'night') lights.push({ x: sx(st.x), y: sy(st.y) - 10, r: CFG.torchR / 2 + 28 });
+    for (const f of s.flares) lights.push({ x: sx(f.x), y: sy(f.y) - 4, r: 110 });
     drawDark(a, lights, camX, camY);
     if (a > 0.2) {
       // Warm spill around the fire.
@@ -429,6 +491,8 @@ export function makeRenderer(cv) {
     blit(sh, x - sh.width / 2, y - sh.height / 2 - 1);
     blit(img, x - img.width / 2, y - img.height + 1);
     if (r.carry) blit(itemIcon(r.carry), x - 3, y - img.height - 4);
+    if (r.hp < DINOS[r.kind].hp && !r.routed) bar(x - 8, y - img.height - 4, 16, r.hp / DINOS[r.kind].hp, '#ff6a5a');
+    if (r.chewing && Math.random() < 0.3) burst(r.chewing.x / 2, r.chewing.y / 2 - 4, 2, ['#8a5f36', '#d9b07a'], 30, 0.3, 15);
     if (r.kind === 'rex' && r.stun <= 0) {
       // Footfalls you can feel.
       st.step = (st.step || 0) + dt;
@@ -500,21 +564,26 @@ export function makeRenderer(cv) {
     const len = isNight ? s.nightLen : s.dayLen;
     panel(4, 4, 108, 34);
     blit(isNight ? art.moon : art.sun, 8, 8);
-    drawText(ctx, isNight ? `NIGHT ${s.night}/${s.nights}` : `DAY ${s.night + 1}`, 21, 9, { color: isNight ? '#b8c8ff' : '#ffe08a' });
+    drawText(ctx, isNight ? (Number.isFinite(s.nights) ? `NIGHT ${s.night}/${s.nights}` : `NIGHT ${s.night}`) : `DAY ${s.night + 1}`, 21, 9, { color: isNight ? '#b8c8ff' : '#ffe08a' });
     bar(9, 21, 98, 1 - s.t / len, isNight ? '#6c8cff' : '#ffc53d');
     drawText(ctx, `$${s.funding}`, 9, 27, { color: '#ffd84d' });
     let hy = 42;
     if (s.contract) {
+      // The goal, its reward, and the next action: always on screen.
       const c = s.contract;
-      panel(4, hy, 108, 13);
+      const unlock = c.unlock ? buildById[c.unlock] : null;
+      panel(4, hy, 108, unlock ? 22 : 13);
       blit(species[c.sp], 8, hy + 4);
-      drawText(ctx, c.done ? 'REQUEST DONE' : `WANT ${c.have}/${c.need}  +$${c.bonus}`, 18, hy + 3, { color: c.done ? '#7dff8a' : '#f4ead2' });
-      hy += 15;
+      drawText(ctx, `WANT ${c.have}/${c.need}  +$${c.bonus}`, 18, hy + 3);
+      if (unlock) drawText(ctx, `UNLOCKS ${unlock.name}`, 18, hy + 12, { color: '#7dff8a' });
+      hy += unlock ? 24 : 15;
     }
-    if (s.woodPile > 0 && !isNight) {
+    if (!s.tutorial) {
       panel(4, hy, 108, 13);
       blit(art.wood, 8, hy + 5);
-      drawText(ctx, `FIREWOOD ${s.woodPile}/${CFG.maxWoodPile}`, 18, hy + 3, { color: '#d9b07a' });
+      drawText(ctx, `${s.stock.wood}`, 18, hy + 3, { color: '#d9b07a' });
+      blit(art.stone, 44, hy + 5);
+      drawText(ctx, `${s.stock.stone}`, 52, hy + 3, { color: '#bdb39e' });
       hy += 15;
     }
     if (isNight && s.fire <= CFG.fireSafeMin && Math.floor(s.time * 3) % 2) {
@@ -533,16 +602,18 @@ export function makeRenderer(cv) {
     }
 
     s.players.forEach((p, i) => {
-      const x = W - 104, y = 4 + i * 36;
-      panel(x, y, 100, 32);
+      const x = W - 124, y = 4 + i * 36;
+      panel(x, y, 120, 32);
       drawText(ctx, `P${i + 1}`, x + 4, y + 5, { color: P_COL[i] });
       for (let h = 0; h < s.st.hp; h++) blit(h < p.hp ? art.heart : art.heartEmpty, x + 20 + h * 9, y + 5);
       for (let b = 0; b < s.st.cap; b++) {
         const item = p.carry[b];
         blit(item ? itemIcon(item) : art.boneEmpty, x + 5 + b * 9, y + 19);
       }
-      blit(art.trap, x + 72, y + 18);
-      drawText(ctx, `${p.traps}`, x + 86, y + 19);
+      blit(art.trap, x + 92, y + 18);
+      drawText(ctx, `${p.traps}`, x + 106, y + 19);
+      let gx = x + 106;
+      for (const g of ['sling', 'spear']) if (s.owned[g]) { blit(art.icons[g], gx, y + 3); gx -= 12; }
     });
 
     let ty = H - 14;
@@ -634,7 +705,7 @@ export function makeRenderer(cv) {
     });
 
     const pulse = Math.floor(time * 2) % 2 ? '#ffffff' : '#ffe08a';
-    drawText(ctx, `NEXT: EXPEDITION ${save.wins + 1}`, W / 2, 220, { align: 'center', color: '#ffd38a' });
+    drawText(ctx, `NEXT: EXPEDITION ${tierFor(save.requestsDone || 0) + 1}`, W / 2, 220, { align: 'center', color: '#ffd38a' });
     if (pad) {
       const opt = (label, x, on) => {
         if (on) { ctx.fillStyle = 'rgba(255,224,138,0.18)'; ctx.fillRect(x - 46, 229, 92, 12); }
@@ -650,7 +721,8 @@ export function makeRenderer(cv) {
       drawText(ctx, 'SPACE  SOLO      ENTER  CO-OP', W / 2, 232, { align: 'center', color: pulse });
       drawText(ctx, 'E DIG/CHOP  Q TRAP  ESC PAUSE  (P2: . AND ,)', W / 2, 244, { align: 'center', color: '#b8c8a0' });
     }
-    drawText(ctx, `RUNS ${save.runs}   ISLANDS CLEARED ${save.wins}`, W / 2, 256, { align: 'center', color: '#7a8a70' });
+    const nu = nextUnlock(save.requestsDone || 0);
+    drawText(ctx, `REQUESTS FILLED ${save.requestsDone || 0}   ${nu ? `NEXT UNLOCK: ${nu.name} AT ${nu.unlock}` : 'EVERYTHING UNLOCKED'}   BEST NIGHT ${save.bestNight || 0}`, W / 2, 256, { align: 'center', color: '#7a8a70' });
     const tutLine = touch ? 'TAP HERE FOR THE TUTORIAL' : `${keyName('tutorial', device)}  TUTORIAL`;
     drawText(ctx, save.tutorialDone ? tutLine : `NEW HERE?  ${tutLine}`, W / 2, 268, { align: 'center', color: save.tutorialDone ? '#8a8070' : pulse });
     if (msg) drawText(ctx, msg, W / 2, 282, { align: 'center', color: /DONE/.test(msg) ? '#7dff8a' : '#ff6a5a' });
@@ -658,12 +730,19 @@ export function makeRenderer(cv) {
 
   function drawSummary(s, time = 0) {
     backdrop(time);
-    const won = s.result === 'won';
-    drawText(ctx, won ? 'ISLAND CLEARED' : 'THE NIGHT WON', W / 2, 40, { scale: 3, align: 'center', color: won ? '#7dff8a' : '#ff6a5a', shadow: '#14110c' });
-    panel(W / 2 - 110, 76, 220, 40 + Object.keys(s.banked).length * 12);
-    drawText(ctx, `BONES BANKED  ${s.bankedCount}${s.amber ? `   AMBER ${s.amber}` : ''}`, W / 2, 84, { align: 'center' });
-    drawText(ctx, `FUNDING  $${s.payout}${won ? `  (X${CFG.winBonus})` : ''}`, W / 2, 96, { align: 'center', color: '#ffd84d' });
-    let y = 112;
+    const won = s.result !== 'lost';
+    drawText(ctx, s.result === 'left' ? 'OFF THE ISLAND' : won ? 'ISLAND CLEARED' : 'THE NIGHT WON', W / 2, 30, { scale: 3, align: 'center', color: won ? '#7dff8a' : '#ff6a5a', shadow: '#14110c' });
+    const rows = Object.keys(s.banked).length;
+    panel(W / 2 - 120, 60, 240, 44 + rows * 12 + (s.unlocked.length ? 14 : 0));
+    drawText(ctx, `NIGHTS SURVIVED ${s.night}   REQUESTS FILLED ${s.requestsFilled}`, W / 2, 66, { align: 'center' });
+    drawText(ctx, `BONES BANKED ${s.bankedCount}${s.amber ? `   AMBER ${s.amber}` : ''}`, W / 2, 78, { align: 'center' });
+    const note = s.result === 'left' ? `  (+${Math.round(CFG.leaveBonus * s.night * 100)}% FOR NIGHTS)` : s.result === 'lost' ? '  (KEPT HALF)' : '';
+    drawText(ctx, `FUNDING $${s.payout}${note}`, W / 2, 90, { align: 'center', color: '#ffd84d' });
+    let y = 104;
+    if (s.unlocked.length) {
+      drawText(ctx, `UNLOCKED: ${s.unlocked.map((id) => buildById[id].name).join(', ')}`, W / 2, y, { align: 'center', color: '#7dff8a' });
+      y += 14;
+    }
     for (const [sp, n] of Object.entries(s.banked)) {
       blit(species[sp], W / 2 - 60, y + 1);
       drawText(ctx, `${speciesById[sp].name} X${n}`, W / 2 - 50, y, { color: '#b8c8a0' });
@@ -672,10 +751,60 @@ export function makeRenderer(cv) {
     drawText(ctx, 'SPACE / A / TAP  BACK TO THE MUSEUM', W / 2, 214, { align: 'center', color: Math.floor(time * 2) % 2 ? '#ffffff' : '#ffe08a' });
   }
 
-  function drawPause(device) {
+  const costText = (cost) => Object.entries(cost).map(([k, n]) => `${n} ${k.toUpperCase()}`).join(' ');
+
+  // Build mode: a ghost on the target tile, and a hotbar for each builder.
+  function drawBuild(s, device) {
+    let row = 0;
+    for (const p of s.players) {
+      if (p.build === null || p.down) continue;
+      const list = buildList(s);
+      const b = list[p.build];
+      if (!b) continue;
+      const afford = canAfford(s, b);
+      if (b.kind === 'place') {
+        const tg = buildTarget(s, p);
+        const ok = afford && (tg.ok || b.id === 'snare');
+        const x = tg.x / 2 - cam.x, y = tg.y / 2 - cam.y;
+        ctx.globalAlpha = 0.55 + Math.sin(s.time * 8) * 0.15;
+        const img = b.id === 'snare' ? art.trap : b.id === 'torch' ? art.torch[0] : art.struct[b.id];
+        if (b.id === 'snare') blit(img, x - 5, y - 3);
+        else if (b.id === 'torch') blit(img, x - 4, y - 14);
+        else blit(img, x - img.width / 2, y + 9 - img.height);
+        ctx.globalAlpha = 1;
+        ctx.strokeStyle = ok ? '#7dff8a' : '#ff4a3a';
+        ctx.strokeRect(Math.round(x - 8) + 0.5, Math.round(y - 8) + 0.5, 15, 15);
+      }
+      // Hotbar.
+      const w = list.length * 14 + 6;
+      const bx = Math.round(W / 2 - Math.max(w, 200) / 2), by = H - 58 - row * 54;
+      panel(bx, by, Math.max(w, 200), 50);
+      list.forEach((it, i) => {
+        const ix = bx + 4 + i * 14;
+        if (i === p.build) { ctx.fillStyle = 'rgba(255,224,138,0.35)'; ctx.fillRect(ix - 1, by + 3, 14, 14); }
+        const icon = buildIcon(it.id);
+        ctx.globalAlpha = canAfford(s, it) ? 1 : 0.4;
+        ctx.drawImage(icon, 0, 0, icon.width, icon.height, ix, by + 4, 12, Math.round(12 * icon.height / icon.width) > 12 ? 12 : Math.round(12 * icon.height / icon.width));
+        ctx.globalAlpha = 1;
+      });
+      drawText(ctx, `${s.players.length > 1 ? `P${p.id + 1} ` : ''}${b.name}`, bx + 4, by + 20, { color: '#ffe08a' });
+      drawText(ctx, costText(b.cost), bx + Math.max(w, 200) - 4, by + 20, { align: 'right', color: afford ? '#7dff8a' : '#ff8a7a' });
+      drawText(ctx, b.desc, bx + 4, by + 30, { color: '#b8c8a0', shadow: null });
+      const hint = `${keyName('next', device)} NEXT  ${keyName('place', device)} ${b.kind === 'place' ? 'BUILD' : b.kind === 'use' ? 'USE' : 'CRAFT'}  ${keyName('build', device)} DONE`;
+      drawText(ctx, device === 'touch' ? 'NEXT / PLACE / DONE BUTTONS' : hint, bx + 4, by + 40, { color: '#8a8070', shadow: null });
+      row++;
+    }
+  }
+
+  function drawPause(device, s) {
     ctx.fillStyle = 'rgba(8,10,20,0.7)';
     ctx.fillRect(0, 0, W, H);
-    panel(W / 2 - 90, 150, 180, 70);
+    panel(W / 2 - 110, 150, 220, 84);
+    if (s && !s.tutorial) {
+      const day = s.phase === 'day';
+      const txt = day ? `${keyName('leave', device)}  LEAVE THE ISLAND  (+${Math.round(CFG.leaveBonus * s.night * 100)}%)` : 'THE BOAT ONLY COMES BY DAY';
+      drawText(ctx, txt, W / 2, 214, { align: 'center', color: day ? '#7dff8a' : '#8a8070' });
+    }
     drawText(ctx, 'PAUSED', W / 2, 158, { scale: 2, align: 'center', color: '#ffd38a' });
     drawText(ctx, device === 'touch' ? 'TAP TO RESUME' : `${keyName('resume', device)}  RESUME`, W / 2, 186, { align: 'center' });
     if (device !== 'touch') drawText(ctx, `${keyName('quit', device)}  QUIT TO MUSEUM`, W / 2, 200, { align: 'center', color: '#ff8a7a' });
@@ -693,10 +822,10 @@ export function makeRenderer(cv) {
 
   // Tutorial card (top centre, between the HUD panels) and a guide arrow.
   function drawTutorial(s, hint, target, device) {
-    const text = wrap(fillKeys(hint.text, device), 40);
-    const tip = hint.tip ? wrap(fillKeys(hint.tip, device), 40) : [];
+    const text = wrap(fillKeys(hint.text, device), 37);
+    const tip = hint.tip ? wrap(fillKeys(hint.tip, device), 37) : [];
     const h = 14 + (text.length + tip.length) * 9;
-    panel(118, 4, 252, h);
+    panel(118, 4, 232, h);
     drawText(ctx, `TUTORIAL ${hint.n}/${hint.of}`, 124, 8, { color: '#7a8a70', shadow: null });
     text.forEach((l, i) => drawText(ctx, l, 124, 17 + i * 9));
     tip.forEach((l, i) => drawText(ctx, l, 124, 17 + (text.length + i) * 9, { color: hint.warn ? '#ff8a5a' : '#ffe08a' }));
@@ -730,5 +859,5 @@ export function makeRenderer(cv) {
     }
   }
 
-  return { drawGame, drawMenu, drawSummary, drawPause, drawTutorial, toast, event };
+  return { drawGame, drawMenu, drawSummary, drawPause, drawTutorial, drawBuild, toast, event };
 }

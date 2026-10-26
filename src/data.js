@@ -2,9 +2,11 @@
 export const CFG = {
   dayLen: 75,        // seconds of daylight
   nightLen: 55,      // seconds of night
-  nights: 3,         // survive this many nights to clear the island
+  // Nights never end the run. You leave by day (pause menu) to keep it all.
   digTime: 1.6,      // seconds to dig one bone
   chopTime: 1.2,     // seconds to chop one log
+  mineTime: 2.0,     // seconds to mine one stone
+  mineR: 30,         // how close you must stand to a rock
   digR: 30,          // how close you must stand to a dig site
   chopR: 30,         // how close you must stand to a tree
   pickR: 18,         // walk over dropped items to pick them up
@@ -17,7 +19,7 @@ export const CFG = {
   fireSafeMin: 40,   // below this the fire no longer scares dinosaurs
   woodFuel: 0.3,     // one log adds this much night fuel (1 = a full night)
   maxFuel: 1.6,
-  maxWoodPile: 4,    // logs stockpiled by day, burned at dusk
+  duskBurn: 2,       // logs from the camp stock the fire burns at dusk
   baseCap: 3,        // items carried
   baseTraps: 1,      // traps per night
   trapR: 22,
@@ -35,18 +37,28 @@ export const CFG = {
   spitSpeed: 230,
   spitSlow: 2,       // seconds slowed after a venom hit
   amberChance: 0.06, // chance a dig site is amber instead of bones
-  amberValue: 60,
+  amberValue: 30,
   nightBonus: 2,     // bones dug at night are worth double
-  winBonus: 1.5,     // payout multiplier for clearing the island
-  tierValue: 0.25,   // each cleared expedition adds this to bone value
+  winBonus: 1.5,     // tutorial payout multiplier
+  leaveBonus: 0.1,   // leaving pays +10% per night survived
+  deathKeep: 0.5,    // dying keeps half the run's funding
+  tierValue: 0.25,   // each expedition tier adds this to bone value
+  requestsPerTier: 3,
+  requestBonus: 3,   // a request pays need x bone value x this
+  attackCd: 0.45,
+  spearR: 38,
+  shotSpeed: 320,
+  structR: 13,       // how much of a tile a wall blocks
+  torchR: 55,        // torches scare dinosaurs this close
+  torchLife: 100,    // seconds of night a torch burns
 };
 
 // One shared AI with per-kind stats (see game.js updateDino).
 export const DINOS = {
-  raptor: { name: 'Velociraptor', speed: CFG.raptorSpeed, turn: CFG.raptorTurn, r: CFG.raptorR, bite: CFG.biteR, sight: CFG.sight, dmg: 1 },
-  compy: { name: 'Compsognathus', speed: 160, ladenSpeed: 135, turn: 5, r: 6, bite: 16, sight: 200, dmg: 0, thief: true },
-  spitter: { name: 'Dilophosaurus', speed: 105, turn: 3, r: 10, bite: 18, sight: 300, dmg: 1, range: 210, keepAway: 110, spitCd: 2.6 },
-  rex: { name: 'Tyrannosaurus', speed: 125, turn: 1.5, r: 20, bite: 36, sight: 360, dmg: 2, motionOnly: true, stunScale: 0.5 },
+  raptor: { name: 'Velociraptor', speed: CFG.raptorSpeed, turn: CFG.raptorTurn, r: CFG.raptorR, bite: CFG.biteR, sight: CFG.sight, dmg: 1, hp: 3, wallDps: 2 },
+  compy: { name: 'Compsognathus', speed: 160, ladenSpeed: 135, turn: 5, r: 6, bite: 16, sight: 200, dmg: 0, thief: true, hp: 1, wallDps: 0 },
+  spitter: { name: 'Dilophosaurus', speed: 105, turn: 3, r: 10, bite: 18, sight: 300, dmg: 1, range: 210, keepAway: 110, spitCd: 2.6, hp: 3, wallDps: 1 },
+  rex: { name: 'Tyrannosaurus', speed: 125, turn: 1.5, r: 20, bite: 36, sight: 360, dmg: 2, motionOnly: true, stunScale: 0.5, hp: 15, wallDps: 8 },
 };
 
 export const TRAITS = {
@@ -61,11 +73,11 @@ export const TRAIT_POOL = ['foggy', 'fullmoon', 'storm', 'rich', 'amber'];
 
 // Bones = how many make one full skeleton for the museum.
 export const SPECIES = [
-  { id: 'raptor', name: 'Velociraptor', bones: 4, value: 10, weight: 5, color: '#e8dcc0', perk: '+10% SPEED' },
-  { id: 'stego', name: 'Stegosaurus', bones: 6, value: 20, weight: 4, color: '#e2cfa0', perk: '+1 HEART' },
-  { id: 'trike', name: 'Triceratops', bones: 6, value: 25, weight: 3, color: '#efe3c8', perk: 'LONGER SNARES' },
-  { id: 'herra', name: 'Herrerasaurus', bones: 5, value: 30, weight: 2, color: '#f4e9d0', perk: 'DIG FASTER' },
-  { id: 'rex', name: 'Tyrannosaurus', bones: 8, value: 50, weight: 1, color: '#fff4dc', perk: 'BIGGER FIRE' },
+  { id: 'raptor', name: 'Velociraptor', bones: 4, value: 5, weight: 5, color: '#e8dcc0', perk: '+10% SPEED' },
+  { id: 'stego', name: 'Stegosaurus', bones: 6, value: 10, weight: 4, color: '#e2cfa0', perk: '+1 HEART' },
+  { id: 'trike', name: 'Triceratops', bones: 6, value: 12, weight: 3, color: '#efe3c8', perk: 'LONGER SNARES' },
+  { id: 'herra', name: 'Herrerasaurus', bones: 5, value: 15, weight: 2, color: '#f4e9d0', perk: 'DIG FASTER' },
+  { id: 'rex', name: 'Tyrannosaurus', bones: 8, value: 25, weight: 1, color: '#fff4dc', perk: 'BIGGER FIRE' },
   { id: 'amber', name: 'Amber', bones: 0, value: CFG.amberValue, weight: 0, color: '#ffb43d', treasure: true },
 ];
 export const speciesById = Object.fromEntries(SPECIES.map((s) => [s.id, s]));
@@ -82,3 +94,21 @@ export const UPGRADES = [
 ];
 
 export const upgradeCost = (u, lvl) => u.base * (lvl + 1);
+
+// Things you build or craft during a run from the camp's wood and stone.
+// Each unlocks permanently after filling that many museum requests.
+// kind: place (put on the tile you face), tool/weapon (crafted once per run), use (consumed on the spot).
+export const BUILDS = [
+  { id: 'snare', name: 'Snare', kind: 'place', cost: { wood: 1 }, unlock: 0, desc: 'stuns a dinosaur' },
+  { id: 'torch', name: 'Torch', kind: 'place', cost: { wood: 1 }, unlock: 0, desc: 'light that scares dinosaurs' },
+  { id: 'axe', name: 'Axe', kind: 'tool', cost: { wood: 2, stone: 1 }, unlock: 1, desc: 'chop twice as fast' },
+  { id: 'wall', name: 'Wood Wall', kind: 'place', cost: { wood: 2 }, unlock: 2, hp: 12, solid: true, desc: 'blocks dinosaurs' },
+  { id: 'spear', name: 'Spear', kind: 'weapon', cost: { wood: 2, stone: 1 }, unlock: 3, desc: 'hit and knock back' },
+  { id: 'pickaxe', name: 'Pickaxe', kind: 'tool', cost: { wood: 1, stone: 2 }, unlock: 4, desc: 'mine twice as fast' },
+  { id: 'spikes', name: 'Spike Wall', kind: 'place', cost: { wood: 3, stone: 1 }, unlock: 5, hp: 16, solid: true, spikes: 1, desc: 'hurts what attacks it' },
+  { id: 'sling', name: 'Sling', kind: 'weapon', cost: { wood: 1, stone: 1 }, unlock: 6, desc: 'stun from range (uses stone)' },
+  { id: 'flare', name: 'Flare', kind: 'use', cost: { wood: 1, stone: 1 }, unlock: 7, scareR: 170, time: 6, desc: 'scares off everything nearby' },
+  { id: 'stonewall', name: 'Stone Wall', kind: 'place', cost: { stone: 3 }, unlock: 8, hp: 40, solid: true, desc: 'a much tougher wall' },
+];
+export const buildById = Object.fromEntries(BUILDS.map((b) => [b.id, b]));
+export const nextUnlock = (filled) => BUILDS.find((b) => b.unlock > filled) || null;

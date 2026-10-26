@@ -1,8 +1,8 @@
-import { newRun, update, finish } from './game.js';
+import { newRun, update, finish, leave, buildList } from './game.js';
 import { makeRenderer } from './render.js';
 import { makeInput } from './input.js';
 import { loadSave, writeSave, applyRun, buy, perks } from './save.js';
-import { UPGRADES, speciesById, CFG } from './data.js';
+import { UPGRADES, speciesById, CFG, buildById } from './data.js';
 import { SFX, unlockAudio } from './sfx.js';
 import { makeTutorial, updateTutorial, tutorialHint, tutorialTarget, TUTORIAL_SEED } from './tutorial.js';
 
@@ -31,7 +31,7 @@ let last = performance.now();
 function start(players) {
   run = newRun({
     seed: (Math.random() * 2 ** 31) | 0, players, upgrades: save.upgrades,
-    perks: perks(save), tier: Math.min(save.wins, 6),
+    perks: perks(save), requestsDone: save.requestsDone || 0,
   });
   tut = null;
   screen = 'play';
@@ -74,7 +74,6 @@ function endRun() {
 const EVENT_TEXT = {
   bone: (e) => `${speciesById[e.sp].name} bone!`,
   deposit: (e) => `+$${e.gained} for the museum`,
-  night: (e) => `Night ${e.n}. They're coming.`,
   dawn: () => 'Dawn. Get digging.',
   snap: () => 'Snare! Raptor stunned.',
   down: (e) => `P${e.id + 1} is down!`,
@@ -84,9 +83,15 @@ const EVENT_TEXT = {
   steal: () => 'A compy stole your loot! Tag it!',
   escaped: () => 'The compy got away.',
   amber: () => `Amber! Worth $${CFG.amberValue}.`,
-  contract: (e) => `Museum request filled! +$${e.bonus}`,
+  contract: (e) => (e.unlock ? `Request filled! +$${e.bonus}. UNLOCKED: ${buildById[e.unlock].name}!` : `Request filled! +$${e.bonus}`),
+  built: (e) => (buildById[e.item].kind === 'place' || buildById[e.item].kind === 'use' ? null : `Crafted: ${buildById[e.item].name}`),
+  smash: () => 'Something broke through a wall!',
+  routed: () => null,
+  stone: (e) => `Stone stocked (${run.stock.stone}).`,
+  left: () => 'The boat takes you home.',
   rescued: () => 'You made it back to camp.',
-  wood: (e) => (run.phase === 'night' ? 'The fire flares up.' : `Firewood stacked (${run.woodPile}).`),
+  wood: (e) => (run.phase === 'night' ? 'The fire flares up.' : `Wood stocked (${run.stock.wood}).`),
+  night: (e) => `Night ${e.n}. They're coming.${e.burned ? ` The fire burns ${e.burned} wood.` : ''}`,
 };
 
 const RUMBLE = {
@@ -135,6 +140,7 @@ function press(code) {
     if (['Space', 'Enter', 'PadA', 'PadB', 'PadStart'].includes(code)) screen = 'menu';
   } else if (screen === 'play') {
     if (code === 'Escape' || code === 'PadStart') paused = !paused;
+    else if (paused && (code === 'KeyL' || code === 'PadY')) { if (leave(run)) paused = false; }
     else if (paused && (code === 'KeyQ' || code === 'PadB' || code === 'PadSelect')) { paused = false; finish(run, 'lost'); }
     else if (paused && code === 'PadA') paused = false;
   }
@@ -152,7 +158,10 @@ canvas.addEventListener('pointerdown', (e) => {
     else if (y >= 262) startTutorial();
     else if (y > 214) press(input.touch.active || x < canvas.width / 2 ? 'Space' : 'Enter');
   } else if (screen === 'summary') press('Space');
-  else if (screen === 'play' && paused) paused = false;
+  else if (screen === 'play' && paused) {
+    if (y >= 206 && y <= 222 && leave(run)) paused = false;
+    else paused = false;
+  }
 });
 
 function setupTouch() {
@@ -202,6 +211,7 @@ function setupTouch() {
       unlockAudio();
       b.setPointerCapture(e.pointerId);
       input.touch[key] = true;
+      input.tapTouch(key);
       if (screen !== 'play' && key === 'dig') press('Space');
     });
     const up = () => { input.touch[key] = false; };
@@ -210,8 +220,23 @@ function setupTouch() {
   };
   hold('btn-dig', 'dig');
   hold('btn-trap', 'trap');
+  hold('btn-build', 'build');
+  hold('btn-attack', 'attack');
 }
 setupTouch();
+
+// In build mode the touch buttons change job.
+let touchMode = '';
+function relabelTouch() {
+  const building = run && run.players[0].build !== null;
+  const mode = building ? 'build' : 'play';
+  if (mode === touchMode) return;
+  touchMode = mode;
+  const set = (id, t) => { const b = document.getElementById(id); if (b) b.textContent = t; };
+  set('btn-dig', building ? 'PLACE' : 'DIG');
+  set('btn-trap', building ? 'NEXT' : 'TRAP');
+  set('btn-build', building ? 'DONE' : 'BUILD');
+}
 
 function frame(now) {
   const dt = Math.min(0.1, (now - last) / 1000);
@@ -229,8 +254,10 @@ function frame(now) {
     }
     drainEvents();
     R.drawGame(run, paused ? 0 : dt);
+    R.drawBuild(run, device());
     if (tut && !tut.done) R.drawTutorial(run, tutorialHint(tut, run), tutorialTarget(tut, run), device());
-    if (paused) R.drawPause(device());
+    if (paused) R.drawPause(device(), run);
+    relabelTouch();
     if (run.over) endRun();
   } else if (screen === 'menu') {
     R.drawMenu(save, msg, now / 1000, device(), sel);
@@ -250,6 +277,7 @@ window.__digsite = {
   start,
   startTutorial,
   get tutorial() { return tut; },
+  buildName() { const p = run && run.players[0]; return p && p.build !== null ? buildList(run)[p.build]?.id : null; },
   step(seconds, inputs = []) {
     for (let t = 0; t < seconds && run && !run.over; t += STEP) update(run, inputs, STEP);
   },

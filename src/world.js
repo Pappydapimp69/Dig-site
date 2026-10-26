@@ -125,14 +125,16 @@ export function blocked(world, x, y, r) {
     solidAt(world, x - r, y + r) || solidAt(world, x + r, y + r);
 }
 
-// Is there a tree tile within r of (x, y)? Returns its centre or null.
-export function treeNear(world, x, y, r) {
+// Is there a tile of this type within r of (x, y)? Returns its centre or null.
+export const treeNear = (world, x, y, r) => tileNear(world, x, y, r, T.TREE);
+
+export function tileNear(world, x, y, r, type) {
   const tx0 = Math.floor((x - r) / TILE), tx1 = Math.floor((x + r) / TILE);
   const ty0 = Math.floor((y - r) / TILE), ty1 = Math.floor((y + r) / TILE);
   for (let ty = ty0; ty <= ty1; ty++) {
     for (let tx = tx0; tx <= tx1; tx++) {
       if (tx < 0 || ty < 0 || tx >= world.w || ty >= world.h) continue;
-      if (world.tiles[ty * world.w + tx] !== T.TREE) continue;
+      if (world.tiles[ty * world.w + tx] !== type) continue;
       const cx = (tx + 0.5) * TILE, cy = (ty + 0.5) * TILE;
       if (Math.hypot(cx - x, cy - y) < r + TILE / 2) return { x: cx, y: cy };
     }

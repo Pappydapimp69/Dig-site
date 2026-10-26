@@ -3,10 +3,16 @@
 Dig by day. Survive the night.
 
 A solo or 2-player co-op survival roguelite. You're a fossil hunter on a cursed
-island. By day you dig up dinosaur bones and haul them back to camp. At night,
-raptors hunt you. Your camp fire keeps them off, until it dies down. Survive 3
-nights to clear the island. Bones and funding carry over to your museum, where
-you buy upgrades between runs.
+island. By day you dig up dinosaur bones, chop wood and mine stone. At night,
+dinosaurs hunt you. Your camp fire keeps them off until it burns low; walls,
+spikes, torches and weapons do the rest. Nights never end and keep getting
+harder. Leave by boat during the day to keep everything (plus 10% per night
+survived); die and you keep half.
+
+**The goal is the museum.** It posts a chain of requests. Each one you fill pays
+well and permanently unlocks something new to build: axe, wood wall, spear,
+pickaxe, spike wall, sling, flare, stone wall. Requests also set how hard (and
+how well paid) your next expedition is.
 
 ## Play
 
@@ -16,9 +22,10 @@ New players: press **T** (controller **Y**, or tap the bottom line on a phone) o
 npm run serve        # then open http://127.0.0.1:8080
 ```
 
-- **Solo:** Space on the menu. WASD or arrows to move, E or Space to dig, Q or Shift for a trap.
-- **Co-op:** Enter on the menu. P1: WASD, E dig/revive, Q trap. P2: arrows, `.` dig/revive, `,` trap.
-- **Controllers:** left stick or D-pad to move, A (or RT) to dig/chop/revive, X (or a bumper) for a trap, Start to pause, B to quit from pause. The menu works with the D-pad and A. In co-op with one controller, the keyboard is P1 and the controller is P2; with two controllers each gets a player. Controllers rumble when you're hit and when the rex roars.
+- **Solo:** Space on the menu. WASD or arrows to move, E or Space to dig/chop/mine, Q or Shift for a snare, F to attack, B to build. Esc pauses; from the pause menu, L leaves the island (by day).
+- **Co-op:** Enter on the menu. P1: WASD, E, Q, F, B. P2: arrows, `.` dig, `,` snare, `/` attack, `;` build.
+- **Build mode:** B opens it. Q cycles items, E builds/crafts on the tile you face, B closes it. Materials come from the camp stock.
+- **Controllers:** left stick or D-pad to move, A (or RT) to dig/chop/mine/revive, X (or a bumper) for a snare, B to attack, Y to build (X next, A place), Start to pause; from pause, Y leaves the island and B quits. The menu works with the D-pad and A. In co-op with one controller, the keyboard is P1 and the controller is P2; with two controllers each gets a player. Controllers rumble when you're hit and when the rex roars.
 - Menu: number keys 1-7 buy upgrades.
 
 ## Rules of the island
