@@ -16,7 +16,7 @@ npm run serve        # then open http://127.0.0.1:8080
 
 - **Solo:** Space on the menu. WASD or arrows to move, E or Space to dig, Q or Shift for a trap.
 - **Co-op:** Enter on the menu. P1: WASD, E dig/revive, Q trap. P2: arrows, `.` dig/revive, `,` trap.
-- Gamepads work: left stick, A to dig, X for a trap.
+- **Controllers:** left stick or D-pad to move, A (or RT) to dig/chop/revive, X (or a bumper) for a trap, Start to pause, B to quit from pause. The menu works with the D-pad and A. In co-op with one controller, the keyboard is P1 and the controller is P2; with two controllers each gets a player. Controllers rumble when you're hit and when the rex roars.
 - Menu: number keys 1-7 buy upgrades.
 
 ## Rules of the island
@@ -53,7 +53,7 @@ npm run desktop      # runs in an Electron window
 
 ```
 npm test             # simulation tests (no browser)
-npm run smoke        # headless browser playtest (needs Playwright)
+npm run smoke        # headless browser playtests, incl. a simulated controller (needs Playwright)
 ```
 
 ## Layout

@@ -18,6 +18,10 @@ let save = loadSave(storage());
 let screen = 'menu';
 let run = null;
 let msg = '';
+let paused = false;
+// Menu cursor for controllers: upgrades 0..n-1, then PLAY SOLO, PLAY CO-OP.
+const SOLO = UPGRADES.length, COOP = UPGRADES.length + 1;
+let sel = SOLO;
 let acc = 0;
 let last = performance.now();
 
@@ -27,7 +31,14 @@ function start(players) {
     perks: perks(save), tier: Math.min(save.wins, 6),
   });
   screen = 'play';
+  paused = false;
   acc = 0;
+}
+
+function tryBuy(i) {
+  const r = buy(save, UPGRADES[i].id);
+  if (r.ok) { save = r.save; writeSave(storage(), save); SFX.deposit(); }
+  else msg = r.why === 'maxed' ? 'Already maxed.' : 'Not enough funding.';
 }
 
 function endRun() {
@@ -53,9 +64,18 @@ const EVENT_TEXT = {
   wood: (e) => (run.phase === 'night' ? 'The fire flares up.' : `Firewood stacked (${run.woodPile}).`),
 };
 
+const RUMBLE = {
+  hurt: (e) => input.rumble(e.id, run.players.length, 0.6, 180),
+  down: (e) => input.rumble(e.id, run.players.length, 1, 450),
+  roar: () => input.rumble(null, 0, 0.9, 800),
+  snap: () => input.rumble(null, 0, 0.25, 90),
+  bone: (e) => input.rumble(e.id, run.players.length, 0.15, 60),
+};
+
 function drainEvents() {
   for (const e of run.events) {
     SFX[e.type]?.();
+    RUMBLE[e.type]?.(e);
     const t = EVENT_TEXT[e.type];
     R.event({ ...e, text: t ? t(e) : null }, run);
   }
@@ -64,20 +84,33 @@ function drainEvents() {
 
 function press(code) {
   unlockAudio();
+  if (code === 'PadConnected' || code === 'PadDisconnected') {
+    const text = code === 'PadConnected' ? `Controller ${input.padCount()} connected` : 'Controller disconnected';
+    if (screen === 'play') R.toast(text); else msg = text;
+    if (code === 'PadDisconnected' && screen === 'play' && !run.over) paused = true;
+    return;
+  }
   if (screen === 'menu') {
     msg = '';
     if (code === 'Space') start(1);
     else if (code === 'Enter') start(2);
-    const m = /^Digit([1-9])$/.exec(code);
-    if (m && UPGRADES[m[1] - 1]) {
-      const r = buy(save, UPGRADES[m[1] - 1].id);
-      if (r.ok) { save = r.save; writeSave(storage(), save); SFX.deposit(); }
-      else msg = r.why === 'maxed' ? 'Already maxed.' : 'Not enough funding.';
+    else if (code === 'PadStart') start(input.padCount() >= 2 ? 2 : 1);
+    else if (code === 'PadUp') sel = (sel + COOP) % (COOP + 1);
+    else if (code === 'PadDown') sel = (sel + 1) % (COOP + 1);
+    else if (code === 'PadLeft' || code === 'PadRight') { if (sel >= SOLO) sel = sel === SOLO ? COOP : SOLO; }
+    else if (code === 'PadA') {
+      if (sel === SOLO) start(1);
+      else if (sel === COOP) start(2);
+      else tryBuy(sel);
     }
+    const m = /^Digit([1-9])$/.exec(code);
+    if (m && UPGRADES[m[1] - 1]) tryBuy(m[1] - 1);
   } else if (screen === 'summary') {
-    if (code === 'Space' || code === 'Enter') screen = 'menu';
-  } else if (screen === 'play' && code === 'Escape') {
-    finish(run, 'lost');
+    if (['Space', 'Enter', 'PadA', 'PadB', 'PadStart'].includes(code)) screen = 'menu';
+  } else if (screen === 'play') {
+    if (code === 'Escape' || code === 'PadStart') paused = !paused;
+    else if (paused && (code === 'KeyQ' || code === 'PadB' || code === 'PadSelect')) { paused = false; finish(run, 'lost'); }
+    else if (paused && code === 'PadA') paused = false;
   }
 }
 input.onPress(press);
@@ -89,17 +122,20 @@ canvas.addEventListener('pointerdown', (e) => {
   const y = (e.clientY - r.top) * canvas.height / r.height;
   if (screen === 'menu') {
     const i = Math.floor((y - 80) / 18);
-    if (x >= 14 && x <= 246 && y >= 80 && i < UPGRADES.length) press(`Digit${i + 1}`);
+    if (x >= 14 && x <= 246 && y >= 80 && i < UPGRADES.length) tryBuy(i);
     else if (y > 214) press(input.touch.active || x < canvas.width / 2 ? 'Space' : 'Enter');
   } else if (screen === 'summary') press('Space');
+  else if (screen === 'play' && paused) paused = false;
 });
 
 function setupTouch() {
   const ui = document.getElementById('touch');
   if (!ui) return;
   const show = () => { ui.hidden = false; input.touch.active = true; };
+  // A controller takes over: hide the on-screen controls until the next touch.
+  setInterval(() => { if (input.device === 'pad' && !ui.hidden) { ui.hidden = true; input.touch.active = false; } }, 500);
+  window.addEventListener('touchstart', show, { passive: true });
   if (window.matchMedia && matchMedia('(pointer: coarse)').matches) show();
-  window.addEventListener('touchstart', show, { once: true, passive: true });
 
   const stick = document.getElementById('stick'), knob = document.getElementById('knob');
   let sid = null, ox = 0, oy = 0;
@@ -153,18 +189,19 @@ setupTouch();
 function frame(now) {
   const dt = Math.min(0.1, (now - last) / 1000);
   last = now;
-  input.pollPadPresses();
+  input.pollPadPresses(dt);
   if (screen === 'play') {
-    acc += dt;
+    if (!paused) acc += dt;
     while (acc >= STEP && !run.over) {
       update(run, input.players(run.players.length), STEP);
       acc -= STEP;
     }
     drainEvents();
-    R.drawGame(run, dt);
+    R.drawGame(run, paused ? 0 : dt);
+    if (paused) R.drawPause(input.device);
     if (run.over) endRun();
   } else if (screen === 'menu') {
-    R.drawMenu(save, msg, now / 1000, input.touch.active);
+    R.drawMenu(save, msg, now / 1000, input.touch.active ? 'touch' : input.device, sel);
   } else {
     R.drawSummary(run, now / 1000);
   }
@@ -177,6 +214,7 @@ window.__digsite = {
   get screen() { return screen; },
   get run() { return run; },
   get save() { return save; },
+  get paused() { return paused; },
   start,
   step(seconds, inputs = []) {
     for (let t = 0; t < seconds && run && !run.over; t += STEP) update(run, inputs, STEP);

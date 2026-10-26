@@ -591,7 +591,8 @@ export function makeRenderer(cv) {
     ctx.globalAlpha = 1;
   }
 
-  function drawMenu(save, msg, time = 0, touch = false) {
+  function drawMenu(save, msg, time = 0, device = 'keys', sel = -1) {
+    const touch = device === 'touch', pad = device === 'pad';
     backdrop(time);
     drawText(ctx, 'DIG SITE', W / 2, 18, { scale: 4, align: 'center', color: '#ffd38a', shadow: '#5a2a10' });
     drawText(ctx, 'DIG BY DAY. SURVIVE THE NIGHT.', W / 2, 52, { align: 'center', color: '#b8c8a0' });
@@ -605,7 +606,12 @@ export function makeRenderer(cv) {
       const cost = upgradeCost(u, lvl);
       const can = !maxed && save.funding >= cost;
       const y = 82 + i * 18;
-      drawText(ctx, `${i + 1} ${u.name}`, 22, y, { color: can ? '#f4ead2' : '#8a8070' });
+      if (pad && sel === i) {
+        ctx.fillStyle = 'rgba(255,224,138,0.14)';
+        ctx.fillRect(16, y - 3, 228, 17);
+        drawText(ctx, '>', 16, y, { color: '#ffe08a' });
+      }
+      drawText(ctx, `${pad ? '' : `${i + 1} `}${u.name}`, 22, y, { color: can ? '#f4ead2' : '#8a8070' });
       for (let k = 0; k < u.max; k++) {
         ctx.fillStyle = k < lvl ? '#7dff8a' : '#3a3428';
         ctx.fillRect(150 + k * 6, y + 1, 4, 5);
@@ -628,12 +634,20 @@ export function makeRenderer(cv) {
 
     const pulse = Math.floor(time * 2) % 2 ? '#ffffff' : '#ffe08a';
     drawText(ctx, `NEXT: EXPEDITION ${save.wins + 1}`, W / 2, 220, { align: 'center', color: '#ffd38a' });
-    if (touch) {
+    if (pad) {
+      const opt = (label, x, on) => {
+        if (on) { ctx.fillStyle = 'rgba(255,224,138,0.18)'; ctx.fillRect(x - 46, 229, 92, 12); }
+        drawText(ctx, label, x, 232, { align: 'center', color: on ? pulse : '#8a8070' });
+      };
+      opt('PLAY SOLO', W / 2 - 56, sel === UPGRADES.length);
+      opt('PLAY CO-OP', W / 2 + 56, sel === UPGRADES.length + 1);
+      drawText(ctx, 'A SELECT   D-PAD MOVE   A DIG  X TRAP  START PAUSE', W / 2, 244, { align: 'center', color: '#b8c8a0' });
+    } else if (touch) {
       drawText(ctx, 'TAP HERE TO PLAY', W / 2, 232, { align: 'center', color: pulse });
       drawText(ctx, 'TAP AN UPGRADE TO BUY IT', W / 2, 244, { align: 'center', color: '#b8c8a0' });
     } else {
       drawText(ctx, 'SPACE  SOLO      ENTER  CO-OP', W / 2, 232, { align: 'center', color: pulse });
-      drawText(ctx, 'E DIG/CHOP  Q TRAP  (P2: . AND ,)', W / 2, 244, { align: 'center', color: '#b8c8a0' });
+      drawText(ctx, 'E DIG/CHOP  Q TRAP  ESC PAUSE  (P2: . AND ,)', W / 2, 244, { align: 'center', color: '#b8c8a0' });
     }
     drawText(ctx, `RUNS ${save.runs}   ISLANDS CLEARED ${save.wins}`, W / 2, 256, { align: 'center', color: '#7a8a70' });
     if (msg) drawText(ctx, msg, W / 2, 270, { align: 'center', color: '#ff6a5a' });
@@ -652,8 +666,18 @@ export function makeRenderer(cv) {
       drawText(ctx, `${speciesById[sp].name} X${n}`, W / 2 - 50, y, { color: '#b8c8a0' });
       y += 12;
     }
-    drawText(ctx, 'SPACE OR TAP  BACK TO THE MUSEUM', W / 2, 214, { align: 'center', color: Math.floor(time * 2) % 2 ? '#ffffff' : '#ffe08a' });
+    drawText(ctx, 'SPACE / A / TAP  BACK TO THE MUSEUM', W / 2, 214, { align: 'center', color: Math.floor(time * 2) % 2 ? '#ffffff' : '#ffe08a' });
   }
 
-  return { drawGame, drawMenu, drawSummary, toast, event };
+  function drawPause(device) {
+    ctx.fillStyle = 'rgba(8,10,20,0.7)';
+    ctx.fillRect(0, 0, W, H);
+    panel(W / 2 - 90, 150, 180, 70);
+    drawText(ctx, 'PAUSED', W / 2, 158, { scale: 2, align: 'center', color: '#ffd38a' });
+    const pad = device === 'pad';
+    drawText(ctx, pad ? 'START OR A  RESUME' : device === 'touch' ? 'TAP TO RESUME' : 'ESC  RESUME', W / 2, 186, { align: 'center' });
+    if (device !== 'touch') drawText(ctx, pad ? 'B  QUIT TO MUSEUM' : 'Q  QUIT TO MUSEUM', W / 2, 200, { align: 'center', color: '#ff8a7a' });
+  }
+
+  return { drawGame, drawMenu, drawSummary, drawPause, toast, event };
 }

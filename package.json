@@ -8,7 +8,7 @@
   "scripts": {
     "serve": "node scripts/serve.mjs",
     "test": "node --test test/sim.test.js",
-    "smoke": "node test/smoke.cjs",
+    "smoke": "node test/smoke.cjs && node test/pad.cjs",
     "desktop": "electron .",
     "build": "node scripts/build.mjs"
   },

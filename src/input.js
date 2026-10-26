@@ -2,40 +2,84 @@ const GAME_KEYS = new Set([
   'KeyW', 'KeyA', 'KeyS', 'KeyD', 'KeyE', 'KeyQ', 'Space', 'Enter',
   'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Period', 'Comma',
 ]);
+// Standard gamepad mapping (Xbox names; PlayStation is the same layout).
+const BTN = { A: 0, B: 1, X: 2, Y: 3, LB: 4, RB: 5, LT: 6, RT: 7, SELECT: 8, START: 9, UP: 12, DOWN: 13, LEFT: 14, RIGHT: 15 };
+const PRESS = ['A', 'B', 'X', 'Y', 'START', 'SELECT'];
+const DIRS = ['UP', 'DOWN', 'LEFT', 'RIGHT'];
+const REPEAT_FIRST = 0.4, REPEAT_NEXT = 0.12;
 const unit = (v) => Math.max(-1, Math.min(1, v));
-const dead = (v) => (Math.abs(v) < 0.2 ? 0 : v);
 
 export function makeInput(target) {
   const down = new Set();
   const listeners = [];
   // On-screen controls write here; they drive player 1.
   const touch = { x: 0, y: 0, dig: false, trap: false, active: false };
-  const prevPadButtons = [];
+  const padPrev = [];
+  const state = { device: 'keys' };
+  const emit = (code, pad) => listeners.forEach((f) => f(code, pad));
 
   target.addEventListener('keydown', (e) => {
     if (GAME_KEYS.has(e.code)) e.preventDefault();
-    if (!e.repeat) listeners.forEach((f) => f(e.code));
+    state.device = 'keys';
+    if (!e.repeat) emit(e.code);
     down.add(e.code);
   });
   target.addEventListener('keyup', (e) => down.delete(e.code));
   target.addEventListener('blur', () => down.clear());
+  target.addEventListener('touchstart', () => { state.device = 'touch'; }, { passive: true });
+  target.addEventListener('gamepadconnected', (e) => emit('PadConnected', e.gamepad.index));
+  target.addEventListener('gamepaddisconnected', (e) => emit('PadDisconnected', e.gamepad.index));
 
   const k = (c) => (down.has(c) ? 1 : 0);
 
   function pads() {
     const list = (navigator.getGamepads && navigator.getGamepads()) || [];
-    return Array.from(list).filter(Boolean);
+    return Array.from(list).filter((p) => p && p.connected !== false);
+  }
+  const btn = (pad, name) => {
+    const b = pad.buttons[BTN[name]];
+    return !!b && (b.pressed || b.value > 0.5);
+  };
+
+  // Left stick with a radial dead zone, D-pad overriding it.
+  function padMove(pad) {
+    let x = pad.axes[0] || 0, y = pad.axes[1] || 0;
+    const m = Math.hypot(x, y);
+    if (m < 0.25) { x = 0; y = 0; } else { const s = Math.min(1, (m - 0.25) / 0.75) / m; x *= s; y *= s; }
+    const dx = btn(pad, 'RIGHT') - btn(pad, 'LEFT'), dy = btn(pad, 'DOWN') - btn(pad, 'UP');
+    if (dx || dy) { x = dx; y = dy; }
+    return { x, y };
   }
 
-  // Gamepad A/Start act like Space/Enter on menus.
-  function pollPadPresses() {
-    pads().forEach((pad, i) => {
-      const a = !!pad.buttons[0]?.pressed, start = !!pad.buttons[9]?.pressed;
-      const prev = prevPadButtons[i] || {};
-      if (a && !prev.a) listeners.forEach((f) => f('Space'));
-      if (start && !prev.start) listeners.forEach((f) => f('Enter'));
-      prevPadButtons[i] = { a, start };
+  // Edge-detected presses for menus: PadA, PadB, PadStart, PadUp (with auto-repeat), ...
+  function pollPadPresses(dt = 1 / 60) {
+    pads().forEach((pad) => {
+      const prev = padPrev[pad.index] || (padPrev[pad.index] = { held: {}, rep: {} });
+      const m = padMove(pad);
+      const dir = { UP: m.y < -0.5, DOWN: m.y > 0.5, LEFT: m.x < -0.5, RIGHT: m.x > 0.5 };
+      for (const name of PRESS) {
+        const now = btn(pad, name);
+        if (now && !prev.held[name]) { state.device = 'pad'; emit(`Pad${name[0]}${name.slice(1).toLowerCase()}`, pad.index); }
+        prev.held[name] = now;
+      }
+      for (const name of DIRS) {
+        const code = `Pad${name[0]}${name.slice(1).toLowerCase()}`;
+        if (!dir[name]) { prev.rep[name] = null; continue; }
+        if (prev.rep[name] == null) { state.device = 'pad'; emit(code, pad.index); prev.rep[name] = REPEAT_FIRST; continue; }
+        prev.rep[name] -= dt;
+        if (prev.rep[name] <= 0) { emit(code, pad.index); prev.rep[name] = REPEAT_NEXT; }
+      }
+      if (m.x || m.y) state.device = 'pad';
     });
+  }
+
+  // Which player each connected pad drives. Solo: every pad drives P1.
+  // Co-op with one pad: keyboard is P1, the pad is P2.
+  function padOwners(n) {
+    const list = pads();
+    if (n === 1) return list.map((pad) => ({ pad, player: 0 }));
+    const offset = Math.max(0, n - list.length);
+    return list.slice(0, n).map((pad, j) => ({ pad, player: offset + j }));
   }
 
   function players(n) {
@@ -54,15 +98,30 @@ export function makeInput(target) {
     p1.dig = p1.dig || touch.dig;
     p1.trap = p1.trap || touch.trap;
     const out = n === 1 ? [p1] : [p1, p2];
-    pads().slice(0, n).forEach((pad, i) => {
-      const o = out[i];
-      const ax = dead(pad.axes[0] || 0), ay = dead(pad.axes[1] || 0);
-      if (ax || ay) { o.x = ax; o.y = ay; }
-      o.dig = o.dig || !!pad.buttons[0]?.pressed;
-      o.trap = o.trap || !!pad.buttons[2]?.pressed;
-    });
+    for (const { pad, player } of padOwners(n)) {
+      const o = out[player];
+      const m = padMove(pad);
+      if (m.x || m.y) { o.x = m.x; o.y = m.y; }
+      o.dig = o.dig || btn(pad, 'A') || btn(pad, 'RT');
+      o.trap = o.trap || btn(pad, 'X') || btn(pad, 'RB') || btn(pad, 'LB');
+    }
     return out;
   }
 
-  return { onPress: (f) => listeners.push(f), players, pollPadPresses, touch };
+  // Rumble the pad(s) driving a player (or every pad when player is null).
+  function rumble(player, n, strong, ms) {
+    const owners = player == null ? pads().map((pad) => ({ pad })) : padOwners(n).filter((o) => o.player === player);
+    for (const { pad } of owners) {
+      const act = pad.vibrationActuator;
+      if (act && act.playEffect) {
+        act.playEffect('dual-rumble', { duration: ms, strongMagnitude: strong, weakMagnitude: Math.min(1, strong * 0.6) }).catch(() => {});
+      }
+    }
+  }
+
+  return {
+    onPress: (f) => listeners.push(f), players, pollPadPresses, rumble, touch,
+    padCount: () => pads().length,
+    get device() { return state.device; },
+  };
 }

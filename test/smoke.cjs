@@ -49,6 +49,8 @@ async function waitFor(page, fn, timeout = 5000) {
     if (shots) await page.screenshot({ path: path.join(shots, 'night.png') });
 
     await page.keyboard.press('Escape');
+    await waitFor(page, () => window.__digsite.paused === true);
+    await page.keyboard.press('KeyQ');
     await waitFor(page, () => window.__digsite.screen === 'summary');
     if (shots) await page.screenshot({ path: path.join(shots, 'summary.png') });
     await page.keyboard.press('Space');
