@@ -1,0 +1,17 @@
+{
+  "name": "dig-site",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Dig by day, survive the night. Co-op fossil-hunting survival roguelite.",
+  "type": "module",
+  "main": "electron/main.mjs",
+  "scripts": {
+    "serve": "node scripts/serve.mjs",
+    "test": "node --test test/sim.test.js",
+    "smoke": "node test/smoke.cjs",
+    "desktop": "electron ."
+  },
+  "devDependencies": {
+    "electron": "^33.2.0"
+  }
+}

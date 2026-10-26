@@ -1,0 +1,21 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Dig Site</title>
+  <style>
+    html, body { margin: 0; height: 100%; background: #070b07; }
+    body { display: flex; align-items: center; justify-content: center; }
+    canvas {
+      width: min(100vw, calc(100vh * 1.6));
+      height: min(100vh, calc(100vw / 1.6));
+      image-rendering: pixelated;
+    }
+  </style>
+</head>
+<body>
+  <canvas id="game" width="960" height="600"></canvas>
+  <script type="module" src="src/main.js"></script>
+</body>
+</html>
