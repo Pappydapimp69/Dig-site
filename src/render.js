@@ -591,7 +591,7 @@ export function makeRenderer(cv) {
     ctx.globalAlpha = 1;
   }
 
-  function drawMenu(save, msg, time = 0) {
+  function drawMenu(save, msg, time = 0, touch = false) {
     backdrop(time);
     drawText(ctx, 'DIG SITE', W / 2, 18, { scale: 4, align: 'center', color: '#ffd38a', shadow: '#5a2a10' });
     drawText(ctx, 'DIG BY DAY. SURVIVE THE NIGHT.', W / 2, 52, { align: 'center', color: '#b8c8a0' });
@@ -628,8 +628,13 @@ export function makeRenderer(cv) {
 
     const pulse = Math.floor(time * 2) % 2 ? '#ffffff' : '#ffe08a';
     drawText(ctx, `NEXT: EXPEDITION ${save.wins + 1}`, W / 2, 220, { align: 'center', color: '#ffd38a' });
-    drawText(ctx, 'SPACE  SOLO      ENTER  CO-OP', W / 2, 232, { align: 'center', color: pulse });
-    drawText(ctx, 'E DIG/CHOP  Q TRAP  (P2: . AND ,)', W / 2, 244, { align: 'center', color: '#b8c8a0' });
+    if (touch) {
+      drawText(ctx, 'TAP HERE TO PLAY', W / 2, 232, { align: 'center', color: pulse });
+      drawText(ctx, 'TAP AN UPGRADE TO BUY IT', W / 2, 244, { align: 'center', color: '#b8c8a0' });
+    } else {
+      drawText(ctx, 'SPACE  SOLO      ENTER  CO-OP', W / 2, 232, { align: 'center', color: pulse });
+      drawText(ctx, 'E DIG/CHOP  Q TRAP  (P2: . AND ,)', W / 2, 244, { align: 'center', color: '#b8c8a0' });
+    }
     drawText(ctx, `RUNS ${save.runs}   ISLANDS CLEARED ${save.wins}`, W / 2, 256, { align: 'center', color: '#7a8a70' });
     if (msg) drawText(ctx, msg, W / 2, 270, { align: 'center', color: '#ff6a5a' });
   }
@@ -647,7 +652,7 @@ export function makeRenderer(cv) {
       drawText(ctx, `${speciesById[sp].name} X${n}`, W / 2 - 50, y, { color: '#b8c8a0' });
       y += 12;
     }
-    drawText(ctx, 'SPACE  BACK TO THE MUSEUM', W / 2, 214, { align: 'center', color: Math.floor(time * 2) % 2 ? '#ffffff' : '#ffe08a' });
+    drawText(ctx, 'SPACE OR TAP  BACK TO THE MUSEUM', W / 2, 214, { align: 'center', color: Math.floor(time * 2) % 2 ? '#ffffff' : '#ffe08a' });
   }
 
   return { drawGame, drawMenu, drawSummary, toast, event };

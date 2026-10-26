@@ -2,20 +2,42 @@
 <html lang="en">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <title>Dig Site</title>
   <style>
-    html, body { margin: 0; height: 100%; background: #070b07; }
-    body { display: flex; align-items: center; justify-content: center; }
+    :root { --bg: #070b07; --ink: #f4ead2; --ring: rgba(244, 234, 210, 0.28); --fill: rgba(20, 17, 12, 0.55); --dig: rgba(255, 197, 61, 0.5); color-scheme: dark; }
+    html, body { margin: 0; height: 100%; background: var(--bg); overflow: hidden; }
+    body { display: flex; align-items: center; justify-content: center; touch-action: none; -webkit-user-select: none; user-select: none; }
     canvas {
       width: min(100vw, calc(100vh * 1.6));
       height: min(100vh, calc(100vw / 1.6));
       image-rendering: pixelated;
     }
+    [hidden] { display: none !important; }
+    #touch {
+      position: fixed; left: 0; right: 0; bottom: 0;
+      display: flex; justify-content: space-between; align-items: flex-end;
+      padding: 16px max(20px, env(safe-area-inset-right, 0px)) calc(20px + env(safe-area-inset-bottom, 0px)) max(20px, env(safe-area-inset-left, 0px));
+      pointer-events: none;
+    }
+    #stick, #touch button { pointer-events: auto; touch-action: none; }
+    #stick { position: relative; width: 128px; height: 128px; border-radius: 50%; background: var(--fill); border: 2px solid var(--ring); }
+    #knob { position: absolute; left: 50%; top: 50%; width: 52px; height: 52px; margin: -26px 0 0 -26px; border-radius: 50%; background: var(--ring); }
+    #btns { display: flex; gap: 14px; align-items: flex-end; }
+    #touch button {
+      width: 76px; height: 76px; border-radius: 50%; border: 2px solid var(--ring);
+      background: var(--fill); color: var(--ink); font: bold 15px ui-monospace, Menlo, monospace; letter-spacing: 1px;
+    }
+    #touch #btn-dig { width: 92px; height: 92px; background: var(--dig); }
+    #touch button:active { filter: brightness(1.5); }
   </style>
 </head>
 <body>
   <canvas id="game" width="480" height="300"></canvas>
+  <div id="touch" hidden>
+    <div id="stick"><div id="knob"></div></div>
+    <div id="btns"><button id="btn-trap" type="button">TRAP</button><button id="btn-dig" type="button">DIG</button></div>
+  </div>
   <script type="module" src="src/main.js"></script>
 </body>
 </html>

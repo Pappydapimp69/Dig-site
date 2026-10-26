@@ -62,7 +62,7 @@ function drainEvents() {
   run.events.length = 0;
 }
 
-input.onPress((code) => {
+function press(code) {
   unlockAudio();
   if (screen === 'menu') {
     msg = '';
@@ -79,7 +79,76 @@ input.onPress((code) => {
   } else if (screen === 'play' && code === 'Escape') {
     finish(run, 'lost');
   }
+}
+input.onPress(press);
+
+// Taps on the canvas work the menus (buy a row, start a run).
+canvas.addEventListener('pointerdown', (e) => {
+  const r = canvas.getBoundingClientRect();
+  const x = (e.clientX - r.left) * canvas.width / r.width;
+  const y = (e.clientY - r.top) * canvas.height / r.height;
+  if (screen === 'menu') {
+    const i = Math.floor((y - 80) / 18);
+    if (x >= 14 && x <= 246 && y >= 80 && i < UPGRADES.length) press(`Digit${i + 1}`);
+    else if (y > 214) press(input.touch.active || x < canvas.width / 2 ? 'Space' : 'Enter');
+  } else if (screen === 'summary') press('Space');
 });
+
+function setupTouch() {
+  const ui = document.getElementById('touch');
+  if (!ui) return;
+  const show = () => { ui.hidden = false; input.touch.active = true; };
+  if (window.matchMedia && matchMedia('(pointer: coarse)').matches) show();
+  window.addEventListener('touchstart', show, { once: true, passive: true });
+
+  const stick = document.getElementById('stick'), knob = document.getElementById('knob');
+  let sid = null, ox = 0, oy = 0;
+  const moveStick = (e) => {
+    const R = stick.clientWidth / 2;
+    let dx = e.clientX - ox, dy = e.clientY - oy;
+    const d = Math.hypot(dx, dy);
+    if (d > R) { dx *= R / d; dy *= R / d; }
+    knob.style.transform = `translate(${dx}px, ${dy}px)`;
+    // Dead zone matters: the rex sees any movement.
+    const k = Math.hypot(dx, dy) / R < 0.2 ? 0 : 1;
+    input.touch.x = (dx / R) * k;
+    input.touch.y = (dy / R) * k;
+  };
+  stick.addEventListener('pointerdown', (e) => {
+    sid = e.pointerId;
+    stick.setPointerCapture(sid);
+    const r = stick.getBoundingClientRect();
+    ox = r.left + r.width / 2;
+    oy = r.top + r.height / 2;
+    moveStick(e);
+  });
+  stick.addEventListener('pointermove', (e) => { if (e.pointerId === sid) moveStick(e); });
+  const end = (e) => {
+    if (e.pointerId !== sid) return;
+    sid = null;
+    input.touch.x = input.touch.y = 0;
+    knob.style.transform = '';
+  };
+  stick.addEventListener('pointerup', end);
+  stick.addEventListener('pointercancel', end);
+
+  const hold = (id, key) => {
+    const b = document.getElementById(id);
+    b.addEventListener('pointerdown', (e) => {
+      e.preventDefault();
+      unlockAudio();
+      b.setPointerCapture(e.pointerId);
+      input.touch[key] = true;
+      if (screen !== 'play' && key === 'dig') press('Space');
+    });
+    const up = () => { input.touch[key] = false; };
+    b.addEventListener('pointerup', up);
+    b.addEventListener('pointercancel', up);
+  };
+  hold('btn-dig', 'dig');
+  hold('btn-trap', 'trap');
+}
+setupTouch();
 
 function frame(now) {
   const dt = Math.min(0.1, (now - last) / 1000);
@@ -95,7 +164,7 @@ function frame(now) {
     R.drawGame(run, dt);
     if (run.over) endRun();
   } else if (screen === 'menu') {
-    R.drawMenu(save, msg, now / 1000);
+    R.drawMenu(save, msg, now / 1000, input.touch.active);
   } else {
     R.drawSummary(run, now / 1000);
   }

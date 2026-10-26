@@ -8,6 +8,8 @@ const dead = (v) => (Math.abs(v) < 0.2 ? 0 : v);
 export function makeInput(target) {
   const down = new Set();
   const listeners = [];
+  // On-screen controls write here; they drive player 1.
+  const touch = { x: 0, y: 0, dig: false, trap: false, active: false };
   const prevPadButtons = [];
 
   target.addEventListener('keydown', (e) => {
@@ -48,6 +50,9 @@ export function makeInput(target) {
       p1.dig = p1.dig || !!k('Space') || p2.dig;
       p1.trap = p1.trap || !!k('ShiftLeft') || p2.trap;
     }
+    if (touch.x || touch.y) { p1.x = touch.x; p1.y = touch.y; }
+    p1.dig = p1.dig || touch.dig;
+    p1.trap = p1.trap || touch.trap;
     const out = n === 1 ? [p1] : [p1, p2];
     pads().slice(0, n).forEach((pad, i) => {
       const o = out[i];
@@ -59,5 +64,5 @@ export function makeInput(target) {
     return out;
   }
 
-  return { onPress: (f) => listeners.push(f), players, pollPadPresses };
+  return { onPress: (f) => listeners.push(f), players, pollPadPresses, touch };
 }
