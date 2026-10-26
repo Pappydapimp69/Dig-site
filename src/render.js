@@ -132,6 +132,10 @@ export function makeRenderer(cv) {
     } else if (e.type === 'cantafford' && p) {
       const b = buildById[e.item];
       floaters.push({ x: p.x / 2, y: p.y / 2 - 18, t: 1, text: `NEED ${costText(b.cost)}`, color: '#ff8a7a' });
+    } else if (e.type === 'nosnare' && p) {
+      floaters.push({ x: p.x / 2, y: p.y / 2 - 18, t: 1.2, text: 'NO SNARES. CRAFT ONE', color: '#ff8a7a' });
+    } else if (e.type === 'packfull' && p) {
+      floaters.push({ x: p.x / 2, y: p.y / 2 - 18, t: 1.2, text: 'CARRYING ALL THE SNARES YOU CAN', color: '#ff8a7a' });
     } else if (e.type === 'nothingtocraft' && p) {
       floaters.push({ x: p.x / 2, y: p.y / 2 - 18, t: 1.4, text: 'NOTHING NEW TO CRAFT HERE', color: '#c8a050' });
     } else if (e.type === 'needstation' && p) {
@@ -468,7 +472,8 @@ export function makeRenderer(cv) {
     if (tool) {
       const total = tool === 'axe' ? CFG.chopTime / (s.owned.axe ? 2 : 1) : tool === 'pickaxe' ? CFG.mineTime / (s.owned.pickaxe ? 2 : 1) : buildById[p.build.id].time;
       const t = tool === 'axe' ? p.chopT : tool === 'pickaxe' ? p.mineT : p.build.t;
-      bar(x - 8, y - img.height - 6 - p.carry.length * 3, 16, t / total, tool === 'axe' ? '#d9b07a' : tool === 'pickaxe' ? '#bdb39e' : '#ffd84d');
+      // Placing shows its bar on the ghost only.
+      if (!(tool === 'hammer' && p.build.mode === 'place')) bar(x - 8, y - img.height - 6 - p.carry.length * 3, 16, t / total, tool === 'axe' ? '#d9b07a' : tool === 'pickaxe' ? '#bdb39e' : '#ffd84d');
       const up = Math.floor(s.time * 8) % 2 === 0;
       const ic = art.icons[tool];
       const left = p.fx < -0.3;
@@ -807,12 +812,11 @@ export function makeRenderer(cv) {
       if (p.build.mode === 'place') {
         const b = buildById[p.build.id];
         const tg = buildTarget(s, p);
-        const ok = canAfford(s, b) && (tg.ok || (b.id === 'snare' && tg.why !== 'blocked' && tg.why !== 'player'));
+        const ok = canAfford(s, b) && tg.ok;
         const x = tg.x / 2 - cam.x, y = tg.y / 2 - cam.y;
         ctx.globalAlpha = 0.55 + Math.sin(s.time * 8) * 0.15;
         const img = buildIcon(b.id);
-        if (b.id === 'snare') blit(img, x - 5, y - 3);
-        else if (b.id === 'torch') blit(img, x - 4, y - 14);
+        if (b.id === 'torch') blit(img, x - 4, y - 14);
         else blit(img, x - img.width / 2, y + 9 - img.height);
         ctx.globalAlpha = 1;
         ctx.strokeStyle = ok ? '#7dff8a' : '#ff4a3a';

@@ -82,6 +82,10 @@ test('full walkthrough with real inputs completes the tutorial', () => {
   assert.ok(s.owned.pickaxe);
   assert.equal(currentStep(tut).id, 'attack');
   tapIn({ attack: true });                                             // attack
+  assert.equal(currentStep(tut).id, 'snare');
+  Object.assign(p, { fx: 1, fy: 0 });                                  // face the workbench
+  choose('snare');                                                     // snare
+  assert.equal(p.traps, 1);
   assert.equal(currentStep(tut).id, 'trap');
   frame(s, tut, { trap: true }); frame(s, tut);                        // trap
   assert.equal(currentStep(tut).id, 'dusk');
@@ -156,4 +160,27 @@ test('tip appears after being stuck a while', () => {
 test('old saves load with the tutorial not done', () => {
   assert.equal(freshSave().tutorialDone, false);
   assert.equal(loadSave({ getItem: () => JSON.stringify({ funding: 5 }) }).tutorialDone, false);
+});
+
+test('dropping your only snare early cannot soft-lock the snare step', () => {
+  const { s, tut } = setup();
+  tut.i = STEPS.findIndex((x) => x.id === 'trap');
+  s.stock.wood = 2; // what entering the step tops up
+  const p = s.players[0];
+  assert.equal(p.traps, 0);
+  assert.match(tutorialHint(tut, s).tip, /MAKE ANOTHER AT THE WORKBENCH/);
+  // Craft one at a workbench, then the step completes.
+  const tx = Math.floor(p.x / 32) + 1, ty = Math.floor(p.y / 32);
+  const st = { kind: 'workbench', tx, ty, x: (tx + 0.5) * 32, y: (ty + 0.5) * 32, hp: 20, maxHp: 20, solid: true, life: 0 };
+  s.structures.push(st); s.structAt.set(ty * s.world.w + tx, st);
+  assert.equal(tutorialTarget(tut, s), st, 'arrow points at the workbench');
+  Object.assign(p, { fx: 1, fy: 0 });
+  const tapIn = (inp) => { frame(s, tut, inp); frame(s, tut); };
+  tapIn({ dig: true });
+  for (let i = 0; i < 5 && menuItems(s, p)[p.build.sel].id !== 'snare'; i++) tapIn({ y: 1 });
+  tapIn({ dig: true });
+  hold(s, tut, buildById.snare.time + 0.05, { dig: true });
+  frame(s, tut);
+  tapIn({ trap: true });
+  assert.equal(currentStep(tut).id, 'dusk');
 });

@@ -37,7 +37,7 @@ npm run serve        # then open http://127.0.0.1:8080
 - **Tyrannosaurus** - the last night. Bites for 2 and shrugs off snares fast, but it only sees you when you move. Freeze.
 
 **Crafting tables**
-- Tools, weapons and flares are crafted at a table: face it and press E (controller A, phone DIG) to open its own menu. A **Workbench** (4 wood) makes the axe and spear; a **Stone Workshop** (3 wood, 4 stone, unlocks with the pickaxe) makes the pickaxe, sling and flare. Walls, torches and snares need no table.
+- Tools, weapons and flares are crafted at a table: face it and press E (controller A, phone DIG) to open its own menu. A **Workbench** (4 wood) makes snares, the axe and the spear; a **Stone Workshop** (3 wood, 4 stone, unlocks with the pickaxe) makes the pickaxe, sling and flare. Walls, torches and snares need no table.
 
 **Everything else**
 - Hold dig next to a tree to chop wood. Wood brought to camp by day is stacked and burned at dusk; wood brought at night keeps the fire alive.
@@ -51,7 +51,7 @@ npm run serve        # then open http://127.0.0.1:8080
 - A full bag slows you down. Tall grass slows you down but hides you.
 - Raptors are faster than you but turn slowly, so a late sidestep works.
 - The fire shrinks all night. Once it's small, raptors stop being scared of it.
-- Snares stun a raptor for 3 seconds. You get a fresh set each night.
+- Snares stun a dinosaur for 3 seconds. Make them at a workbench (1 wood each); set one with the snare key.
 - In co-op, hold dig next to a downed partner to revive them.
 
 ## Desktop / Steam build

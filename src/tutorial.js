@@ -20,7 +20,8 @@ export const STEPS = [
   { id: 'workshop', text: 'BETTER GEAR NEEDS A STONE WORKSHOP. BUILD ONE FROM THE BUILD MENU.', tip: 'IT COSTS WOOD AND STONE. THE MUSEUM SENT SOME.' },
   { id: 'craft2', text: 'FACE THE WORKSHOP, PRESS {DIG} TO USE IT, AND CRAFT A PICKAXE.', tip: 'IT MINES TWICE AS FAST.' },
   { id: 'attack', text: 'PRESS {ATTACK} TO SWING YOUR SPEAR.', tip: 'HIT A DINOSAUR ENOUGH AND IT RUNS OFF.' },
-  { id: 'trap', text: 'PRESS {TRAP} TO SET A SNARE.', tip: 'A DINOSAUR THAT STEPS ON A SNARE IS STUNNED.' },
+  { id: 'snare', text: 'SNARES ARE MADE AT THE WORKBENCH TOO. USE IT AND MAKE A SNARE.', tip: 'MAKE AS MANY AS YOU LIKE. EACH COSTS 1 WOOD.' },
+  { id: 'trap', text: 'PRESS {TRAP} TO SET YOUR SNARE.', tip: 'A DINOSAUR THAT STEPS ON A SNARE IS STUNNED.' },
   { id: 'dusk', text: 'NIGHT IS COMING. GO BACK TO THE FIRE.', tip: 'DINOSAURS COME OUT AT NIGHT.' },
   { id: 'night', text: 'THE FIRE KEEPS RAPTORS AWAY UNTIL IT BURNS LOW. SURVIVE UNTIL DAWN.', tip: 'SPEAR IT WITH {ATTACK}, FEED THE FIRE, OR LURE IT ONTO YOUR SNARE.' },
 ];
@@ -82,6 +83,7 @@ function enter(tut, s) {
   // The museum tops up supplies so the build steps can't stall on materials.
   if (STEPS[tut.i].id === 'build') { s.stock.wood = Math.max(s.stock.wood, 4); s.stock.stone = Math.max(s.stock.stone, 1); }
   if (STEPS[tut.i].id === 'bench') s.stock.wood = Math.max(s.stock.wood, 4);
+  if (STEPS[tut.i].id === 'snare' || STEPS[tut.i].id === 'trap') s.stock.wood = Math.max(s.stock.wood, 2);
   if (STEPS[tut.i].id === 'workshop') { s.stock.wood = Math.max(s.stock.wood, 3); s.stock.stone = Math.max(s.stock.stone, 4); }
   if (STEPS[tut.i].id === 'craft2') { s.stock.wood = Math.max(s.stock.wood, 1); s.stock.stone = Math.max(s.stock.stone, 2); }
   if (STEPS[tut.i].id === 'craft') { s.stock.wood = Math.max(s.stock.wood, 2); s.stock.stone = Math.max(s.stock.stone, 1); }
@@ -115,6 +117,7 @@ export function updateTutorial(tut, s, events, dt) {
     case 'workshop': ok = events.some((e) => e.type === 'built' && e.item === 'workshop'); break;
     case 'craft2': ok = events.some((e) => e.type === 'built' && e.item === 'pickaxe'); break;
     case 'attack': ok = has('swing'); break;
+    case 'snare': ok = events.some((e) => e.type === 'built' && e.item === 'snare'); break;
     case 'trap': ok = has('trap'); break;
     case 'dusk': ok = s.phase === 'night'; break;
     case 'night': ok = s.over && s.result === 'won'; break;
@@ -137,6 +140,7 @@ export function tutorialHint(tut, s) {
   else if (step.id === 'dig' && p.moving && dist(p, tut.site) < CFG.digR) warn = 'STAND STILL TO DIG.';
   else if (step.id === 'mine' && p.carry.length >= s.st.cap) warn = 'YOUR BAG IS FULL. EMPTY IT AT CAMP FIRST.';
   else if ((step.id === 'mine' || step.id === 'attack' || step.id === 'trap') && p.build !== null) warn = 'THE BUILD MENU IS OPEN. PRESS {BUILD} TO CLOSE IT.';
+  else if (step.id === 'trap' && p.traps === 0) warn = 'OUT OF SNARES. MAKE ANOTHER AT THE WORKBENCH.';
   else if (step.id === 'build' && p.build && p.build.mode === 'place') warn = 'NOW HOLD {PLACE} TO BUILD THE WALL IN THE OUTLINE.';
   else if (step.id === 'bench' && p.build && p.build.mode === 'place') warn = 'NOW HOLD {PLACE} TO BUILD THE WORKBENCH.';
   else if ((step.id === 'craft' || step.id === 'craft2') && p.build && p.build.mode === 'craft') warn = 'HOLD {PLACE} UNTIL THE BAR FILLS.';
@@ -148,11 +152,12 @@ export function tutorialHint(tut, s) {
 
 // Where the guide arrow points, in world units (or null).
 export function tutorialTarget(tut, s) {
+  if (STEPS[tut.i].id === 'trap' && s.players[0].traps === 0) return s.structures.find((x) => x.kind === 'workbench') || null;
   switch (STEPS[tut.i].id) {
     case 'dig': return tut.site;
     case 'bank': case 'stack': case 'stone': case 'dusk': return s.world.camp;
     case 'chop': return tut.tree;
-    case 'craft': return s.structures.find((x) => x.kind === 'workbench') || null;
+    case 'craft': case 'snare': return s.structures.find((x) => x.kind === 'workbench') || null;
     case 'craft2': return s.structures.find((x) => x.kind === 'workshop') || null;
     case 'mine': return tut.rock;
     default: return null;

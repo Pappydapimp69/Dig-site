@@ -189,15 +189,13 @@ function act(s, p, b) {
   if (!canAfford(s, b)) return 'cantafford';
   if (b.kind === 'place') {
     const tg = buildTarget(s, p);
-    if (b.id === 'snare') {
-      if (tg.why === 'blocked' || tg.why === 'player') return 'cantbuild';
-      s.traps.push({ x: tg.x, y: tg.y, armed: true });
-    } else {
-      if (!tg.ok) return 'cantbuild';
-      placeStructure(s, b, tg);
-    }
+    if (!tg.ok) return 'cantbuild';
+    placeStructure(s, b, tg);
   } else if (b.kind === 'tool' || b.kind === 'weapon') {
     s.owned[b.id] = true;
+  } else if (b.id === 'snare') {
+    if (p.traps >= CFG.maxSnares) return 'packfull';
+    p.traps++;
   } else if (b.id === 'flare') {
     s.flares.push({ x: p.x, y: p.y, t: b.scareTime });
     for (const r of s.dinos) {
@@ -247,7 +245,6 @@ function startNight(s) {
   s.stock.wood -= burn;
   s.fuel = 1 + burn * CFG.woodFuel;
   s.fire = s.st.fireR;
-  for (const p of s.players) p.traps = s.st.traps;
   for (const st of s.structures) if (st.kind === 'torch') st.life = CFG.torchLife;
   // Compies scatter at dusk, dropping anything they stole.
   for (const d of s.dinos) if (d.carry) dropItem(s, d.x, d.y, d.carry);
@@ -477,7 +474,7 @@ function updatePlayer(s, p, inp, dt) {
         // Check up front so you don't hold for nothing.
         const tg = buildTarget(s, p);
         const bad = !hasStation(s, p, b) ? 'needstation' : !canAfford(s, b) ? 'cantafford'
-          : b.kind === 'place' && (b.id === 'snare' ? tg.why === 'blocked' || tg.why === 'player' : !tg.ok) ? 'cantbuild' : null;
+          : b.kind === 'place' && !tg.ok ? 'cantbuild' : b.id === 'snare' && p.traps >= CFG.maxSnares ? 'packfull' : null;
         if (bad) {
           if (digPress) s.events.push({ type: bad, id: p.id, item: b.id });
           p.digT = p.chopT = p.mineT = 0;
@@ -556,10 +553,12 @@ function updatePlayer(s, p, inp, dt) {
   if (!chopped) p.chopT = 0;
   if (!mined) p.mineT = 0;
 
-  if (trapPress && p.traps > 0) {
-    s.traps.push({ x: p.x, y: p.y, armed: true });
-    p.traps--;
-    s.events.push({ type: 'trap', id: p.id });
+  if (trapPress) {
+    if (p.traps > 0) {
+      s.traps.push({ x: p.x, y: p.y, armed: true });
+      p.traps--;
+      s.events.push({ type: 'trap', id: p.id });
+    } else s.events.push({ type: 'nosnare', id: p.id });
   }
   collectAndBank(s, p);
 }

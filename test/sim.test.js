@@ -725,7 +725,7 @@ test('the build menu lists only structures; gear is crafted at its own table', (
   Object.assign(p, openSpot(s, 300), { fx: 1, fy: 0 });
   const kinds = menuItems(s, p, null).map((b) => b.kind);
   assert.ok(kinds.length && kinds.every((k) => k === 'place'), 'build menu: structures only');
-  assert.deepEqual(menuItems(s, p, 'workbench').map((b) => b.id), ['axe', 'spear']);
+  assert.deepEqual(menuItems(s, p, 'workbench').map((b) => b.id), ['snare', 'axe', 'spear']);
   assert.deepEqual(menuItems(s, p, 'workshop').map((b) => b.id), ['pickaxe', 'sling', 'flare']);
   // No table: dig does nothing table-ish and there's no way to craft.
   buildItem(s, 'spear');
@@ -749,15 +749,26 @@ test('the build menu lists only structures; gear is crafted at its own table', (
   assert.notEqual(p.build?.from, 'workshop');
 });
 
-test('a table with nothing left to craft says so', () => {
+test('snares are crafted at a workbench, as many as you like, and you start with none', () => {
   const s = builder();
   const p = s.players[0];
+  assert.equal(p.traps, 0, 'no free snares');
+  assert.ok(!menuItems(s, p, null).some((b) => b.id === 'snare'), 'not in the build menu');
   Object.assign(p, openSpot(s, 300));
+  update(s, [{ trap: true }], STEP); update(s, [{}], STEP);
+  assert.equal(s.traps.length, 0);
+  assert.ok(s.events.some((e) => e.type === 'nosnare'));
   tableAt(s, p, 'workbench');
-  s.owned.axe = s.owned.spear = true;
-  update(s, [{ dig: true }], STEP);
-  assert.equal(p.build, null);
-  assert.ok(s.events.some((e) => e.type === 'nothingtocraft'));
+  buildItem(s, 'snare');
+  buildItem(s, 'snare');
+  assert.equal(p.traps, 2);
+  assert.equal(s.stock.wood, 48);
+  update(s, [{ trap: true }], STEP); update(s, [{}], STEP);
+  assert.equal(s.traps.length, 1);
+  assert.equal(p.traps, 1);
+  toNight(s);
+  assert.equal(p.traps, 1, 'no nightly refill');
+  assert.equal(newRun({ trait: 'none', seed: 3, upgrades: { traps: 2 } }).players[0].traps, 2, 'Snare Kit: start with more');
 });
 
 test('you can build the tables themselves', () => {

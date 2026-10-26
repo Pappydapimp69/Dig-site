@@ -21,7 +21,8 @@ export const CFG = {
   maxFuel: 1.6,
   duskBurn: 2,       // logs from the camp stock the fire burns at dusk
   baseCap: 3,        // items carried
-  baseTraps: 1,      // traps per night
+  baseTraps: 0,      // snares you start a run with (craft more at a workbench)
+  maxSnares: 9,
   trapR: 22,
   stunTime: 3,
   reviveR: 34,
@@ -89,7 +90,7 @@ export const UPGRADES = [
   { id: 'bag', name: 'Bigger Bag', desc: '+1 item carried', base: 40, max: 4 },
   { id: 'dig', name: 'Better Brush', desc: 'dig 20% faster', base: 50, max: 4 },
   { id: 'boots', name: 'Trail Boots', desc: 'move 10% faster', base: 60, max: 3 },
-  { id: 'traps', name: 'Snare Kit', desc: '+1 trap each night', base: 45, max: 4 },
+  { id: 'traps', name: 'Snare Kit', desc: 'start with +1 snare', base: 45, max: 4 },
   { id: 'fire', name: 'Bigger Fire', desc: 'camp fire burns wider', base: 70, max: 3 },
   { id: 'lantern', name: 'Lantern', desc: 'see farther, spot dig sites', base: 55, max: 3 },
   { id: 'medkit', name: 'Medkit', desc: '+1 heart', base: 120, max: 2 },
@@ -99,14 +100,15 @@ export const upgradeCost = (u, lvl) => u.base * (lvl + 1);
 
 // Things you build or craft during a run from the camp's wood and stone.
 // Each unlocks permanently after filling that many museum requests.
-// kind: place (put on the tile you face), tool/weapon (crafted once per run), use (consumed on the spot).
+// kind: place (put on the tile you face), tool/weapon (crafted once per run), use (consumed on the spot),
+// item (crafted into your pack, as many as you like).
 // time: seconds of holding dig to build or craft it.
 // station: this structure is a crafting table of that level. needs: crafting
 // it requires standing at a table of at least that level.
 export const STATIONS = { 1: 'Workbench', 2: 'Stone Workshop' };
 export const BUILDS = [
   { id: 'workbench', time: 3, name: 'Workbench', kind: 'place', cost: { wood: 4 }, unlock: 0, hp: 20, solid: true, station: 1, desc: 'craft axes and spears here' },
-  { id: 'snare', time: 1, name: 'Snare', kind: 'place', cost: { wood: 1 }, unlock: 0, desc: 'stuns a dinosaur' },
+  { id: 'snare', time: 1, name: 'Snare', kind: 'item', cost: { wood: 1 }, unlock: 0, needs: 1, desc: '+1 snare. set it with the snare key' },
   { id: 'torch', time: 1, name: 'Torch', kind: 'place', cost: { wood: 1 }, unlock: 0, desc: 'light that scares dinosaurs' },
   { id: 'axe', time: 2.5, name: 'Axe', kind: 'tool', cost: { wood: 2, stone: 1 }, unlock: 1, needs: 1, desc: 'chop twice as fast' },
   { id: 'wall', time: 2, name: 'Wood Wall', kind: 'place', cost: { wood: 2 }, unlock: 2, hp: 12, solid: true, desc: 'blocks dinosaurs' },

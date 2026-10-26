@@ -21,7 +21,7 @@ async function waitFor(page, fn, timeout = 8000) {
   const errors = [];
   page.on('pageerror', (e) => errors.push(e.message));
   page.on('console', (m) => m.type() === 'error' && errors.push(m.text()));
-  const step = () => page.evaluate(() => { const t = window.__digsite.tutorial; return t && !t.done ? ['move', 'dig', 'bank', 'chop', 'stack', 'mine', 'stone', 'build', 'bench', 'craft', 'workshop', 'craft2', 'attack', 'trap', 'dusk', 'night'][t.i] : 'done'; });
+  const step = () => page.evaluate(() => { const t = window.__digsite.tutorial; return t && !t.done ? ['move', 'dig', 'bank', 'chop', 'stack', 'mine', 'stone', 'build', 'bench', 'craft', 'workshop', 'craft2', 'attack', 'snare', 'trap', 'dusk', 'night'][t.i] : 'done'; });
   const holdKey = async (key, ms) => { await page.keyboard.down(key); await page.waitForTimeout(ms); await page.keyboard.up(key); };
   const goTo = (what) => page.evaluate((what) => {
     const d = window.__digsite, s = d.run, t = d.tutorial, p = s.players[0];
@@ -88,6 +88,9 @@ async function waitFor(page, fn, timeout = 8000) {
     await choose('pickaxe', true);
     if (await step() !== 'attack') throw new Error(`expected attack, got ${await step()}`);
     await page.keyboard.press('KeyF'); await page.waitForTimeout(100);
+    if (await step() !== 'snare') throw new Error(`expected snare, got ${await step()}`);
+    await page.evaluate(() => { const p = window.__digsite.run.players[0]; p.fx = 1; p.fy = 0; });
+    await choose('snare', true);
     if (await step() !== 'trap') throw new Error(`expected trap, got ${await step()}`);
     await page.keyboard.press('KeyQ');
     await page.waitForTimeout(150);
