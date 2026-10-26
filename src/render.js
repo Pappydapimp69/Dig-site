@@ -452,14 +452,31 @@ export function makeRenderer(cv) {
     const frame = p.moving ? cycle[Math.floor(st.t * 8) % 4] : 0;
     const img = set[dir][frame];
     const digging = p.digT > 0;
-    const bob = p.moving && frame !== 0 ? -1 : digging && Math.floor(s.time * 8) % 2 ? 1 : 0;
+    const working = digging || p.chopT > 0 || p.mineT > 0;
+    const bob = p.moving && frame !== 0 ? -1 : working && Math.floor(s.time * 8) % 2 ? 1 : 0;
     blit(img, x - img.width / 2, y - img.height + 1 + bob);
     if (tileUnder(s, p) === T.TALL) blit(art.tuft, x - 6, y - 3);
     // Carried bones stack above the head.
     p.carry.forEach((b, i) => blit(itemIcon(b), x - 3, y - img.height - 3 - i * 3));
-    if (p.chopT > 0) {
-      bar(x - 8, y - img.height - 6 - p.carry.length * 3, 16, p.chopT / CFG.chopTime, '#d9b07a');
-      if (Math.floor(s.time * 6) % 2) burst(x + cam.x + p.fx * 8, y + cam.y - 8, 1, ['#3f8547', '#5aa55a'], 20, 0.4, 10);
+    // Chopping and mining: progress bar, a tool swinging toward the target, chips.
+    const tool = p.chopT > 0 ? 'axe' : p.mineT > 0 ? 'pickaxe' : null;
+    if (tool) {
+      const total = tool === 'axe' ? CFG.chopTime / (s.owned.axe ? 2 : 1) : CFG.mineTime / (s.owned.pickaxe ? 2 : 1);
+      const t = tool === 'axe' ? p.chopT : p.mineT;
+      bar(x - 8, y - img.height - 6 - p.carry.length * 3, 16, t / total, tool === 'axe' ? '#d9b07a' : '#bdb39e');
+      const up = Math.floor(s.time * 8) % 2 === 0;
+      const ic = art.icons[tool];
+      const left = p.fx < -0.3;
+      ctx.save();
+      ctx.translate(Math.round(x + (left ? -9 : 9)), Math.round(y - 10 + (up ? -3 : 1)));
+      ctx.scale(left ? -1 : 1, 1);
+      ctx.rotate(up ? -0.6 : 0.5);
+      ctx.drawImage(ic, -ic.width / 2, -ic.height / 2);
+      ctx.restore();
+      if (!up && Math.random() < 0.5) {
+        const chips = tool === 'axe' ? ['#d9b07a', '#8a5f36', '#3f8547'] : ['#8d8577', '#bdb39e', '#5d574d'];
+        burst(x + cam.x + (left ? -14 : 14), y + cam.y - 6, 2, chips, 35, 0.35, 18);
+      }
     }
     if (p.slow > 0 && Math.random() < 0.3) particles.push({ x: x + cam.x, y: y + cam.y - 6, vx: 0, vy: 10, life: 0.4, color: '#9ef04a', g: 0 });
     if (digging) {
