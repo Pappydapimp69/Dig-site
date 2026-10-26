@@ -80,6 +80,19 @@ async function waitFor(page, fn, timeout = 5000) {
     const y1 = await page.evaluate(() => window.__digsite.run.players[0].y);
     if (!(y1 > y0 + 10)) throw new Error(`D-pad did not move P1 (${y0} -> ${y1})`);
 
+    // Y starts the tutorial from the menu; holding it must not open the build menu.
+    await page.evaluate(() => { window.__digsite.run.players[0].hp = 0; });
+    await page.evaluate(() => { const d = window.__digsite; d.run.players[0].down = true; });
+    await waitFor(page, () => window.__digsite.screen === 'summary');
+    await tap(0);
+    await waitFor(page, () => window.__digsite.screen === 'menu');
+    await page.evaluate(() => { window.__pad.buttons[3] = { pressed: true, value: 1 }; });
+    await waitFor(page, () => window.__digsite.screen === 'play' && !!window.__digsite.tutorial);
+    await page.waitForTimeout(200);
+    await page.evaluate(() => { window.__pad.buttons[3] = { pressed: false, value: 0 }; });
+    await page.waitForTimeout(100);
+    if (await page.evaluate(() => window.__digsite.buildMode) !== null) throw new Error('tutorial started with the build menu open');
+
     if (errors.length) throw new Error(`page errors:\n${errors.join('\n')}`);
     console.log('pad ok');
   } finally {

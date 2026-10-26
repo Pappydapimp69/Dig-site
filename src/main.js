@@ -28,12 +28,21 @@ let sel = SOLO;
 let acc = 0;
 let last = performance.now();
 
+// A button still held from the menu (Y starts the tutorial and is also
+// Build) must not act on the run's first frame: mark it already held.
+function primeInput() {
+  input.clearTaps();
+  const now = input.players(run.players.length);
+  run.players.forEach((p, i) => { for (const k of ['dig', 'trap', 'build', 'attack']) p.held[k] = !!now[i][k]; });
+}
+
 function start(players) {
   run = newRun({
     seed: (Math.random() * 2 ** 31) | 0, players, upgrades: save.upgrades,
     perks: perks(save), requestsDone: save.requestsDone || 0,
   });
   tut = null;
+  primeInput();
   screen = 'play';
   paused = false;
   acc = 0;
@@ -42,6 +51,7 @@ function start(players) {
 function startTutorial() {
   run = newRun({ seed: TUTORIAL_SEED, players: 1, tutorial: true });
   tut = makeTutorial(run);
+  primeInput();
   screen = 'play';
   paused = false;
   acc = 0;

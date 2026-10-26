@@ -135,6 +135,8 @@ export function makeInput(target) {
     onPress: (f) => listeners.push(f), players, pollPadPresses, rumble, touch,
     // On-screen buttons call this on press so a tap shorter than a frame still counts.
     tapTouch: (key) => tapped.add(`touch:${key}`),
+    // Drop taps left over from menus (they'd fire on a run's first frame).
+    clearTaps: () => tapped.clear(),
     padCount: () => pads().length,
     get device() { return state.device; },
   };
