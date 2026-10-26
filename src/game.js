@@ -175,9 +175,9 @@ function act(s, p, b) {
   } else if (b.kind === 'tool' || b.kind === 'weapon') {
     s.owned[b.id] = true;
   } else if (b.id === 'flare') {
-    s.flares.push({ x: p.x, y: p.y, t: b.time });
+    s.flares.push({ x: p.x, y: p.y, t: b.scareTime });
     for (const r of s.dinos) {
-      if (dist(r, p) < b.scareR) { r.scared = b.time; r.fleeFrom = { x: p.x, y: p.y }; if (r.carry) { dropItem(s, r.x, r.y, r.carry); r.carry = null; } }
+      if (dist(r, p) < b.scareR) { r.scared = b.scareTime; r.fleeFrom = { x: p.x, y: p.y }; if (r.carry) { dropItem(s, r.x, r.y, r.carry); r.carry = null; } }
     }
   }
   for (const [k, n] of Object.entries(b.cost)) s.stock[k] -= n;
@@ -418,8 +418,7 @@ function updatePlayer(s, p, inp, dt) {
       const b = list[sel];
       if (!hasStation(s, p, b)) s.events.push({ type: 'needstation', id: p.id, item: b.id });
       else if (!canAfford(s, b)) s.events.push({ type: 'cantafford', id: p.id, item: b.id });
-      else if (b.kind === 'place') p.build = { mode: 'place', id: b.id };
-      else { s.events.push({ type: act(s, p, b), id: p.id, item: b.id }); p.build = null; }
+      else p.build = { mode: b.kind === 'place' ? 'place' : 'craft', id: b.id, t: 0 };
     }
     collectAndBank(s, p);
     return;
@@ -439,15 +438,34 @@ function updatePlayer(s, p, inp, dt) {
 
   if (pressed(p, inp, 'attack')) attack(s, p);
 
-  // Placing: walk to aim the ghost, dig puts it down, snare goes back to the menu.
-  if (p.build && p.build.mode === 'place') {
+  // Placing (walk to aim the ghost) or crafting (at a table): hold dig while
+  // standing still until the bar fills, like chopping. Moving or letting go
+  // resets it; snare goes back to the menu. Materials are spent at the end.
+  if (p.build && (p.build.mode === 'place' || p.build.mode === 'craft')) {
     const b = buildById[p.build.id];
+    if (!inp.dig) p.build.armed = true; // the press that picked it from the menu doesn't count
     if (trapPress) p.build = { mode: 'menu', sel: p.lastSel };
-    else if (digPress) {
-      const res = act(s, p, b);
-      s.events.push({ type: res, id: p.id, item: b.id });
-      if (res === 'built') p.build = null;
-    }
+    else if (inp.dig && !p.moving && p.build.armed) {
+      if (p.build.t === 0) {
+        // Check up front so you don't hold for nothing.
+        const tg = buildTarget(s, p);
+        const bad = !hasStation(s, p, b) ? 'needstation' : !canAfford(s, b) ? 'cantafford'
+          : b.kind === 'place' && (b.id === 'snare' ? tg.why === 'blocked' || tg.why === 'player' : !tg.ok) ? 'cantbuild' : null;
+        if (bad) {
+          if (digPress) s.events.push({ type: bad, id: p.id, item: b.id });
+          p.digT = p.chopT = p.mineT = 0;
+          collectAndBank(s, p);
+          return;
+        }
+      }
+      p.build.t += dt;
+      if (p.build.t >= b.time) {
+        const res = act(s, p, b);
+        s.events.push({ type: res, id: p.id, item: b.id });
+        if (res === 'built') p.build = null;
+        else p.build.t = 0;
+      }
+    } else p.build.t = 0;
     p.digT = p.chopT = p.mineT = 0;
     collectAndBank(s, p);
     return;

@@ -137,10 +137,11 @@ export function tutorialHint(tut, s) {
   else if (step.id === 'dig' && p.moving && dist(p, tut.site) < CFG.digR) warn = 'STAND STILL TO DIG.';
   else if (step.id === 'mine' && p.carry.length >= s.st.cap) warn = 'YOUR BAG IS FULL. EMPTY IT AT CAMP FIRST.';
   else if ((step.id === 'mine' || step.id === 'attack' || step.id === 'trap') && p.build !== null) warn = 'THE BUILD MENU IS OPEN. PRESS {BUILD} TO CLOSE IT.';
-  else if (step.id === 'build' && p.build && p.build.mode === 'place') warn = 'NOW PRESS {PLACE} TO PUT THE WALL IN THE OUTLINE.';
-  else if (step.id === 'bench' && p.build && p.build.mode === 'place') warn = 'NOW PRESS {PLACE} TO PUT THE WORKBENCH DOWN.';
+  else if (step.id === 'build' && p.build && p.build.mode === 'place') warn = 'NOW HOLD {PLACE} TO BUILD THE WALL IN THE OUTLINE.';
+  else if (step.id === 'bench' && p.build && p.build.mode === 'place') warn = 'NOW HOLD {PLACE} TO BUILD THE WORKBENCH.';
+  else if ((step.id === 'craft' || step.id === 'craft2') && p.build && p.build.mode === 'craft') warn = 'HOLD {PLACE} UNTIL THE BAR FILLS.';
   else if (step.id === 'craft' && !s.structures.some((x) => x.kind === 'workbench' && dist(x, p) < CFG.stationR)) warn = 'WALK UP TO YOUR WORKBENCH FIRST.';
-  else if (step.id === 'workshop' && p.build && p.build.mode === 'place') warn = 'NOW PRESS {PLACE} TO PUT THE WORKSHOP DOWN.';
+  else if (step.id === 'workshop' && p.build && p.build.mode === 'place') warn = 'NOW HOLD {PLACE} TO BUILD THE WORKSHOP.';
   else if (step.id === 'craft2' && !s.structures.some((x) => x.kind === 'workshop' && dist(x, p) < CFG.stationR)) warn = 'WALK UP TO YOUR STONE WORKSHOP FIRST.';
   return { text: step.text, tip: warn || (tut.t > TIP_AFTER ? step.tip : null), warn: !!warn, n: tut.i + 1, of: STEPS.length };
 }

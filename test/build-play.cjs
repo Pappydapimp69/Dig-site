@@ -20,7 +20,13 @@ async function waitFor(page, fn, timeout = 6000) {
   const page = await browser.newPage({ viewport: { width: 960, height: 600 } });
   const errors = [];
   page.on('pageerror', (e) => errors.push(e.message));
+  page.on('console', (m) => m.type() === 'error' && errors.push(m.text()));
   const tap = async (k) => { await page.keyboard.press(k); await page.waitForTimeout(60); };
+  // Hold E until the build finishes, polling game state (headless frames run slow).
+  const holdUntilBuilt = async () => {
+    await page.keyboard.down('KeyE');
+    try { await waitFor(page, () => window.__digsite.buildMode === null, 15000); } finally { await page.keyboard.up('KeyE'); }
+  };
   try {
     await page.goto(`http://127.0.0.1:${server.address().port}/`);
     await page.evaluate(() => localStorage.setItem('digsite.save.v1', JSON.stringify({ requestsDone: 9, tutorialDone: true })));
@@ -41,19 +47,19 @@ async function waitFor(page, fn, timeout = 6000) {
     await tap('KeyE');
     if (await page.evaluate(() => window.__digsite.buildMode) !== 'place') throw new Error('no placement after choosing');
     if (shots) await page.screenshot({ path: path.join(shots, 'build-ghost.png') });
-    await tap('KeyE');
+    await holdUntilBuilt();
     await waitFor(page, () => window.__digsite.run.structures.some((x) => x.kind === 'wall'));
     if (await page.evaluate(() => window.__digsite.buildMode) !== null) throw new Error('build mode stayed open after placing');
     // A spear needs a workbench: build one beside you first.
     await page.evaluate(() => { const p = window.__digsite.run.players[0]; p.fx = 1; p.fy = 0; });
     await tap('KeyB');
     for (let i = 0; i < 14 && (await page.evaluate(() => window.__digsite.buildName())) !== 'workbench'; i++) await tap('KeyS');
-    await tap('KeyE'); await tap('KeyE');
+    await tap('KeyE'); await holdUntilBuilt();
     await waitFor(page, () => window.__digsite.run.structures.some((x) => x.kind === 'workbench'));
     if (shots) await page.screenshot({ path: path.join(shots, 'build-bench.png') });
     await tap('KeyB');
     for (let i = 0; i < 14 && (await page.evaluate(() => window.__digsite.buildName())) !== 'spear'; i++) await tap('KeyS');
-    await tap('KeyE');
+    await tap('KeyE'); await holdUntilBuilt();
     await waitFor(page, () => window.__digsite.run.owned.spear === true);
     // Spear a raptor placed in front of you.
     await page.evaluate(() => {

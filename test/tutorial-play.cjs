@@ -20,6 +20,7 @@ async function waitFor(page, fn, timeout = 8000) {
   const page = await browser.newPage({ viewport: { width: 960, height: 600 } });
   const errors = [];
   page.on('pageerror', (e) => errors.push(e.message));
+  page.on('console', (m) => m.type() === 'error' && errors.push(m.text()));
   const step = () => page.evaluate(() => { const t = window.__digsite.tutorial; return t && !t.done ? ['move', 'dig', 'bank', 'chop', 'stack', 'mine', 'stone', 'build', 'bench', 'craft', 'workshop', 'craft2', 'attack', 'trap', 'dusk', 'night'][t.i] : 'done'; });
   const holdKey = async (key, ms) => { await page.keyboard.down(key); await page.waitForTimeout(ms); await page.keyboard.up(key); };
   const goTo = (what) => page.evaluate((what) => {
@@ -59,25 +60,30 @@ async function waitFor(page, fn, timeout = 8000) {
     await page.waitForTimeout(150);
     if (await step() !== 'build') throw new Error(`expected build, got ${await step()}`);
     await page.evaluate(() => { const s = window.__digsite.run, p = s.players[0]; p.x = s.world.camp.x; p.y = s.world.camp.y + 90; p.fx = 0; p.fy = 1; });
+    // Building and crafting take time: hold E until the build finishes. Poll the
+    // game's state, never a fixed duration (headless frames run slow).
+    const holdUntilBuilt = async () => {
+      await page.keyboard.down('KeyE');
+      try { await waitFor(page, () => window.__digsite.buildMode === null, 15000); } finally { await page.keyboard.up('KeyE'); }
+    };
     const choose = async (id) => {
       await page.keyboard.press('KeyB'); await page.waitForTimeout(60);
       for (let i = 0; i < 10 && (await page.evaluate(() => window.__digsite.buildName())) !== id; i++) { await page.keyboard.press('KeyS'); await page.waitForTimeout(60); }
       await page.keyboard.press('KeyE'); await page.waitForTimeout(80);
+      if (id !== 'wall') await holdUntilBuilt();
     };
     await choose('wall');
     if (await page.evaluate(() => window.__digsite.buildMode) !== 'place') throw new Error('choosing the wall did not start placement');
     if (shots) await page.screenshot({ path: path.join(shots, 'tut-build.png') });
-    await page.keyboard.press('KeyE'); await page.waitForTimeout(100);
+    await holdUntilBuilt();
     if (await step() !== 'bench') throw new Error(`expected bench, got ${await step()}`);
     await page.evaluate(() => { const p = window.__digsite.run.players[0]; p.fx = 1; p.fy = 0; });
     await choose('workbench');
-    await page.keyboard.press('KeyE'); await page.waitForTimeout(100);
     if (await step() !== 'craft') throw new Error(`expected craft, got ${await step()}`);
     await choose('spear');
     if (await step() !== 'workshop') throw new Error(`expected workshop, got ${await step()}`);
     await page.evaluate(() => { const p = window.__digsite.run.players[0]; p.fx = -1; p.fy = 0; });
     await choose('workshop');
-    await page.keyboard.press('KeyE'); await page.waitForTimeout(100);
     if (await step() !== 'craft2') throw new Error(`expected craft2, got ${await step()}`);
     await choose('pickaxe');
     if (await step() !== 'attack') throw new Error(`expected attack, got ${await step()}`);

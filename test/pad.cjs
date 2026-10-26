@@ -17,6 +17,7 @@ async function waitFor(page, fn, timeout = 5000) {
   const page = await browser.newPage();
   const errors = [];
   page.on('pageerror', (e) => errors.push(e.message));
+  page.on('console', (m) => m.type() === 'error' && errors.push(m.text()));
   await page.addInitScript(() => {
     const b = () => ({ pressed: false, value: 0 });
     window.__pad = {

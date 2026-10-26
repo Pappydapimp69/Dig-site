@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { newRun, update, nightRoster, stats, leave, buildList, buildTarget, tierFor, stationLevel } from '../src/game.js';
 import { blocked, treeNear, TILE, T } from '../src/world.js';
-import { CFG, DINOS, TRAITS, TRAIT_POOL } from '../src/data.js';
+import { CFG, DINOS, TRAITS, TRAIT_POOL, buildById } from '../src/data.js';
 import { freshSave, applyRun, buy, loadSave, collection, perks } from '../src/save.js';
 
 const STEP = 1 / 60;
@@ -478,7 +478,7 @@ function buildItem(s, id, p = s.players[0]) {
   for (let i = 0; i < 20 && buildList(s)[p.build.sel].id !== id; i++) press({ y: 1 });
   assert.equal(buildList(s)[p.build.sel].id, id);
   press({ dig: true });
-  if (p.build && p.build.mode === 'place') press({ dig: true });
+  if (p.build && p.build.mode !== 'menu') { run(s, buildById[id].time + 0.05, [{ dig: true }]); update(s, [{}], STEP); }
 }
 
 test('the build menu: choosing a wall shows a ghost, not before; moving is frozen in the menu', () => {
@@ -492,12 +492,15 @@ test('the build menu: choosing a wall shows a ghost, not before; moving is froze
   assert.equal(p.x, x0, 'frozen while choosing');
   while (buildList(s)[p.build.sel].id !== 'wall') { update(s, [{ y: 1 }], STEP); update(s, [{}], STEP); }
   update(s, [{ dig: true }], STEP); update(s, [{}], STEP);
-  assert.deepEqual(p.build, { mode: 'place', id: 'wall' });
+  assert.equal(p.build.mode, 'place');
+  assert.equal(p.build.id, 'wall');
   assert.equal(s.structures.length, 0, 'nothing built yet');
   update(s, [{ trap: true }], STEP); update(s, [{}], STEP);
   assert.equal(p.build.mode, 'menu', 'snare button goes back to the menu');
   update(s, [{ dig: true }], STEP); update(s, [{}], STEP);
   update(s, [{ dig: true }], STEP); update(s, [{}], STEP);
+  assert.equal(s.structures.length, 0, 'a tap does not build it');
+  run(s, buildById.wall.time + 0.05, [{ dig: true }]);
   assert.equal(s.structures.length, 1);
   assert.equal(p.build, null, 'placing closes build mode');
   update(s, [{ build: true }], STEP); update(s, [{}], STEP);
@@ -638,6 +641,7 @@ test('a flare sends nearby dinosaurs running', () => {
   Object.assign(s.players[0], spot);
   tableAt(s, s.players[0]);
   const r = fakeRaptor(spot.x + 60, spot.y);
+  r.stun = 1; // keep it put while the flare is lit
   s.dinos = [r];
   buildItem(s, 'flare');
   assert.ok(r.scared > 0);
@@ -744,4 +748,34 @@ test('you can build the tables themselves', () => {
   buildItem(s, 'workbench');
   assert.ok(s.structures.some((x) => x.kind === 'workbench'));
   assert.equal(stationLevel(s, s.players[0]), 1);
+});
+
+test('building and crafting take time; moving resets it; materials spent at the end', () => {
+  const s = builder();
+  const p = s.players[0];
+  Object.assign(p, openSpot(s, 300), { fx: 1, fy: 0 });
+  const press = (inp) => { update(s, [inp], STEP); update(s, [{}], STEP); };
+  press({ build: true });
+  while (buildList(s)[p.build.sel].id !== 'wall') press({ y: 1 });
+  press({ dig: true });
+  run(s, buildById.wall.time * 0.6, [{ dig: true }]);
+  assert.equal(s.structures.length, 0, 'not done yet');
+  assert.equal(s.stock.wood, 50, 'nothing spent mid-build');
+  assert.ok(p.build.t > 0);
+  update(s, [{ dig: true, x: 1 }], STEP);
+  assert.equal(p.build.t, 0, 'moving resets it');
+  run(s, buildById.wall.time + 0.05, [{ dig: true }]);
+  assert.equal(s.structures.length, 1);
+  assert.equal(s.stock.wood, 48);
+  // Crafting at a table works the same way.
+  tableAt(s, p, 'workbench');
+  press({ build: true });
+  while (buildList(s)[p.build.sel].id !== 'spear') press({ y: 1 });
+  press({ dig: true });
+  assert.equal(p.build.mode, 'craft');
+  run(s, buildById.spear.time * 0.5, [{ dig: true }]);
+  assert.ok(!s.owned.spear);
+  run(s, buildById.spear.time, [{ dig: true }]);
+  assert.ok(s.owned.spear);
+  assert.equal(p.build, null);
 });

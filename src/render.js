@@ -461,11 +461,12 @@ export function makeRenderer(cv) {
     // Carried bones stack above the head.
     p.carry.forEach((b, i) => blit(itemIcon(b), x - 3, y - img.height - 3 - i * 3));
     // Chopping and mining: progress bar, a tool swinging toward the target, chips.
-    const tool = p.chopT > 0 ? 'axe' : p.mineT > 0 ? 'pickaxe' : null;
+    const building = p.build && (p.build.mode === 'place' || p.build.mode === 'craft') && p.build.t > 0;
+    const tool = p.chopT > 0 ? 'axe' : p.mineT > 0 ? 'pickaxe' : building ? 'hammer' : null;
     if (tool) {
-      const total = tool === 'axe' ? CFG.chopTime / (s.owned.axe ? 2 : 1) : CFG.mineTime / (s.owned.pickaxe ? 2 : 1);
-      const t = tool === 'axe' ? p.chopT : p.mineT;
-      bar(x - 8, y - img.height - 6 - p.carry.length * 3, 16, t / total, tool === 'axe' ? '#d9b07a' : '#bdb39e');
+      const total = tool === 'axe' ? CFG.chopTime / (s.owned.axe ? 2 : 1) : tool === 'pickaxe' ? CFG.mineTime / (s.owned.pickaxe ? 2 : 1) : buildById[p.build.id].time;
+      const t = tool === 'axe' ? p.chopT : tool === 'pickaxe' ? p.mineT : p.build.t;
+      bar(x - 8, y - img.height - 6 - p.carry.length * 3, 16, t / total, tool === 'axe' ? '#d9b07a' : tool === 'pickaxe' ? '#bdb39e' : '#ffd84d');
       const up = Math.floor(s.time * 8) % 2 === 0;
       const ic = art.icons[tool];
       const left = p.fx < -0.3;
@@ -476,7 +477,7 @@ export function makeRenderer(cv) {
       ctx.drawImage(ic, -ic.width / 2, -ic.height / 2);
       ctx.restore();
       if (!up && Math.random() < 0.5) {
-        const chips = tool === 'axe' ? ['#d9b07a', '#8a5f36', '#3f8547'] : ['#8d8577', '#bdb39e', '#5d574d'];
+        const chips = tool === 'pickaxe' ? ['#8d8577', '#bdb39e', '#5d574d'] : ['#d9b07a', '#8a5f36', '#f4ead2'];
         burst(x + cam.x + (left ? -14 : 14), y + cam.y - 6, 2, chips, 35, 0.35, 18);
       }
     }
@@ -780,6 +781,16 @@ export function makeRenderer(cv) {
     for (const p of s.players) {
       if (!p.build || p.down) continue;
       const tag = s.players.length > 1 ? `P${p.id + 1} ` : '';
+      if (p.build.mode === 'craft') {
+        const b = buildById[p.build.id];
+        const hint = device === 'touch' ? `${tag}HOLD PLACE TO CRAFT ${b.name.toUpperCase()}`
+          : `${tag}HOLD ${keyName('place', device)} TO ${b.kind === 'use' ? 'LIGHT' : 'CRAFT'} ${b.name}   ${keyName('next', device)} BACK   ${keyName('build', device)} CANCEL`;
+        const w = textWidth(hint) + 12, by = H - 30 - row * 18;
+        panel(Math.round(W / 2 - w / 2), by, w, 13);
+        drawText(ctx, hint, W / 2, by + 3, { align: 'center' });
+        row++;
+        continue;
+      }
       if (p.build.mode === 'place') {
         const b = buildById[p.build.id];
         const tg = buildTarget(s, p);
@@ -793,8 +804,9 @@ export function makeRenderer(cv) {
         ctx.globalAlpha = 1;
         ctx.strokeStyle = ok ? '#7dff8a' : '#ff4a3a';
         ctx.strokeRect(Math.round(x - 8) + 0.5, Math.round(y - 8) + 0.5, 15, 15);
-        const hint = device === 'touch' ? `${tag}PLACE ${b.name.toUpperCase()}: PLACE / BACK / CANCEL`
-          : `${tag}${keyName('place', device)} PLACE ${b.name}   ${keyName('next', device)} BACK   ${keyName('build', device)} CANCEL`;
+        if (p.build.t > 0) bar(x - 7, y + 10, 14, p.build.t / b.time, '#ffd84d');
+        const hint = device === 'touch' ? `${tag}HOLD PLACE TO BUILD ${b.name.toUpperCase()}`
+          : `${tag}HOLD ${keyName('place', device)} TO BUILD ${b.name}   ${keyName('next', device)} BACK   ${keyName('build', device)} CANCEL`;
         const w = textWidth(hint) + 12, by = H - 30 - row * 18;
         panel(Math.round(W / 2 - w / 2), by, w, 13);
         drawText(ctx, hint, W / 2, by + 3, { align: 'center', color: ok ? '#f4ead2' : '#ff8a7a' });
@@ -822,7 +834,7 @@ export function makeRenderer(cv) {
         drawText(ctx, needTable ? `AT ${STATIONS[it.needs].toUpperCase()}` : costText(it.cost), mx + mw - 6, y, { align: 'right', color: needTable ? '#c8a050' : canAfford(s, it) ? '#7dff8a' : '#ff8a7a' });
       });
       const cur = list[sel];
-      const verb = cur.kind === 'place' ? 'CHOOSE' : cur.kind === 'use' ? 'USE' : 'CRAFT';
+      const verb = 'CHOOSE';
       drawText(ctx, cur.needs && !hasStation(s, p, cur) ? `${costText(cur.cost)} - STAND AT A ${STATIONS[cur.needs].toUpperCase()}` : cur.desc, mx + 6, my + mh - 11, { color: '#b8c8a0', shadow: null });
       const hint = device === 'touch' ? 'STICK UP/DOWN, THEN CHOOSE' : `${keyName('choose', device)} SELECT   ${keyName('place', device)} ${verb}   ${keyName('build', device)} CLOSE`;
       drawText(ctx, hint, mx + mw / 2, my + mh + 4, { align: 'center', color: '#f4ead2' });

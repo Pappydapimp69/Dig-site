@@ -243,13 +243,13 @@ function relabelTouch() {
   if (mode === touchMode) return;
   touchMode = mode;
   const set = (id, t) => { const el = document.getElementById(id); if (el) el.textContent = t; };
-  const labels = { play: ['DIG', 'TRAP', 'BUILD'], menu: ['CHOOSE', 'NEXT', 'CLOSE'], place: ['PLACE', 'BACK', 'CANCEL'] }[mode];
+  const labels = { play: ['DIG', 'TRAP', 'BUILD'], menu: ['CHOOSE', 'NEXT', 'CLOSE'], place: ['HOLD', 'BACK', 'CANCEL'], craft: ['HOLD', 'BACK', 'CANCEL'] }[mode] || ['DIG', 'TRAP', 'BUILD'];
   set('btn-dig', labels[0]);
   set('btn-trap', labels[1]);
   set('btn-build', labels[2]);
 }
 
-function frame(now) {
+function tick(now) {
   const dt = Math.min(0.1, (now - last) / 1000);
   last = now;
   input.pollPadPresses(dt);
@@ -275,6 +275,11 @@ function frame(now) {
   } else {
     R.drawSummary(run, now / 1000);
   }
+}
+
+function frame(now) {
+  // One bad frame must not stop the loop for good: log it and keep going.
+  try { tick(now); } catch (err) { console.error(err); }
   requestAnimationFrame(frame);
 }
 requestAnimationFrame(frame);
@@ -292,6 +297,7 @@ window.__digsite = {
     const b = run && run.players[0].build;
     return !b ? null : b.mode === 'menu' ? buildList(run)[b.sel]?.id : b.id;
   },
+  buildTime: (id) => buildById[id].time,
   get buildMode() { return run && run.players[0].build ? run.players[0].build.mode : null; },
   step(seconds, inputs = []) {
     for (let t = 0; t < seconds && run && !run.over; t += STEP) update(run, inputs, STEP);

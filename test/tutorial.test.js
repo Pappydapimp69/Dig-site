@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { newRun, update, buildList } from '../src/game.js';
-import { CFG } from '../src/data.js';
+import { CFG, buildById } from '../src/data.js';
 import { makeTutorial, updateTutorial, currentStep, tutorialHint, tutorialTarget, STEPS, TUTORIAL_SEED, TIP_AFTER } from '../src/tutorial.js';
 import { fillKeys } from '../src/keys.js';
 import { freshSave, loadSave } from '../src/save.js';
@@ -64,19 +64,18 @@ test('full walkthrough with real inputs completes the tutorial', () => {
     tapIn({ build: true });
     for (let i = 0; i < 10 && buildList(s)[p.build.sel].id !== id; i++) tapIn({ y: 1 });
     tapIn({ dig: true });
+    if (p.build && p.build.mode !== 'menu') hold(s, tut, buildById[id].time + 0.05, { dig: true });
   };
   choose('wall');
-  assert.equal(p.build.mode, 'place');
-  assert.match(tutorialHint(tut, s).tip, /PUT THE WALL/);
-  tapIn({ dig: true });                                                // build
+  // (choose() already held dig long enough to build the wall)
   assert.equal(currentStep(tut).id, 'bench');
   Object.assign(p, { fx: 1, fy: 0 });
-  choose('workbench'); tapIn({ dig: true });                           // bench
+  choose('workbench');                                                 // bench
   assert.equal(currentStep(tut).id, 'craft');
   choose('spear');                                                     // craft
   assert.equal(currentStep(tut).id, 'workshop');
   Object.assign(p, { fx: -1, fy: 0 });
-  choose('workshop'); tapIn({ dig: true });                            // workshop
+  choose('workshop');                                                  // workshop
   assert.equal(currentStep(tut).id, 'craft2');
   choose('pickaxe');                                                   // craft2
   assert.ok(s.owned.pickaxe);
