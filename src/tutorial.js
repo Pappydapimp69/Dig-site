@@ -2,7 +2,7 @@
 // steps; it never re-implements a verb. Each step only counts what happens
 // while it is active, and the dig step is pinned to one marked site.
 import { CFG } from './data.js';
-import { TILE, T, blocked } from './world.js';
+import { TILE, T, blocked, tileNear } from './world.js';
 
 const dist = (a, b) => Math.hypot(a.x - b.x, a.y - b.y);
 
@@ -12,9 +12,14 @@ export const STEPS = [
   { id: 'bank', text: 'CARRY THE BONE BACK TO CAMP.', tip: 'WALK INTO THE DIRT CIRCLE AROUND THE FIRE.' },
   { id: 'chop', text: 'HOLD {DIG} NEXT TO A TREE TO CHOP WOOD.', tip: 'STAND RIGHT BESIDE THE MARKED TREE.' },
   { id: 'stack', text: 'BRING THE WOOD TO CAMP. IT BURNS AT NIGHT.', tip: 'WOOD STACKED BY DAY FEEDS THE FIRE AT DUSK.' },
+  { id: 'mine', text: 'HOLD {DIG} NEXT TO THE ROCKS TO MINE STONE.', tip: 'STAND BESIDE THE MARKED ROCK, AWAY FROM TREES.' },
+  { id: 'stone', text: 'BRING THE STONE TO CAMP.', tip: 'WOOD AND STONE AT CAMP ARE WHAT YOU BUILD WITH.' },
+  { id: 'build', text: 'PRESS {BUILD}. PICK WOOD WALL WITH {NEXT}, PLACE IT WITH {PLACE}.', tip: 'THE WALL GOES ON THE TILE YOU ARE FACING.' },
+  { id: 'craft', text: 'IN BUILD MODE, PICK SPEAR AND PRESS {PLACE} TO CRAFT IT.', tip: 'MORE BUILDS UNLOCK AS YOU FILL MUSEUM REQUESTS.' },
+  { id: 'attack', text: 'CLOSE BUILD MODE WITH {BUILD}, THEN PRESS {ATTACK} TO SWING.', tip: 'HIT A DINOSAUR ENOUGH AND IT RUNS OFF.' },
   { id: 'trap', text: 'PRESS {TRAP} TO SET A SNARE.', tip: 'A DINOSAUR THAT STEPS ON A SNARE IS STUNNED.' },
   { id: 'dusk', text: 'NIGHT IS COMING. GO BACK TO THE FIRE.', tip: 'DINOSAURS COME OUT AT NIGHT.' },
-  { id: 'night', text: 'THE FIRE KEEPS RAPTORS AWAY UNTIL IT BURNS LOW. SURVIVE UNTIL DAWN.', tip: 'BRING WOOD TO FEED THE FIRE, OR LURE THE RAPTOR ONTO YOUR SNARE.' },
+  { id: 'night', text: 'THE FIRE KEEPS RAPTORS AWAY UNTIL IT BURNS LOW. SURVIVE UNTIL DAWN.', tip: 'SPEAR IT WITH {ATTACK}, FEED THE FIRE, OR LURE IT ONTO YOUR SNARE.' },
 ];
 export const TUTORIAL_SEED = 6; // a calm island with a dig site and a tree near camp
 export const TIP_AFTER = 12; // seconds stuck on a step before the tip shows
@@ -40,11 +45,29 @@ function pickTree(world, from) {
   return best;
 }
 
+// A rock you can mine without a tree or dig site taking the button first.
+function pickRock(world, from) {
+  let best = null, bd = Infinity;
+  for (let ty = 0; ty < world.h; ty++) {
+    for (let tx = 0; tx < world.w; tx++) {
+      const i = ty * world.w + tx;
+      if (!world.reach[i]) continue;
+      const stand = { x: (tx + 0.5) * TILE, y: (ty + 0.5) * TILE };
+      if (blocked(world, stand.x, stand.y, CFG.pr)) continue;
+      if (!tileNear(world, stand.x, stand.y, CFG.mineR, T.ROCK) || tileNear(world, stand.x, stand.y, CFG.chopR, T.TREE)) continue;
+      if (world.sites.some((s) => dist(s, stand) < CFG.digR + TILE)) continue;
+      const d = dist(stand, from);
+      if (d < bd) { bd = d; best = { ...stand, stand }; }
+    }
+  }
+  return best;
+}
+
 export function makeTutorial(s) {
   const camp = s.world.camp;
   const site = s.world.sites.filter((x) => x.species !== 'amber').sort((a, b) => dist(a, camp) - dist(b, camp))[0];
   site.bones = Math.max(site.bones, 2);
-  const tut = { i: 0, t: 0, site, tree: pickTree(s.world, camp), done: false, base: {} };
+  const tut = { i: 0, t: 0, site, tree: pickTree(s.world, camp), rock: pickRock(s.world, camp), done: false, base: {} };
   enter(tut, s);
   return tut;
 }
@@ -53,6 +76,9 @@ function enter(tut, s) {
   tut.t = 0;
   const p = s.players[0];
   tut.base = { x: p.x, y: p.y, bones: tut.site.bones };
+  // The museum tops up supplies so the build steps can't stall on materials.
+  if (STEPS[tut.i].id === 'build') { s.stock.wood = Math.max(s.stock.wood, 4); s.stock.stone = Math.max(s.stock.stone, 1); }
+  if (STEPS[tut.i].id === 'craft') { s.stock.wood = Math.max(s.stock.wood, 2); s.stock.stone = Math.max(s.stock.stone, 1); }
   if (STEPS[tut.i].id === 'dusk' && s.tutorial) {
     s.tutorial.hold = false;
     s.t = Math.max(s.t, s.dayLen - 10);
@@ -75,6 +101,11 @@ export function updateTutorial(tut, s, events, dt) {
     case 'bank': ok = has('deposit'); break;
     case 'chop': ok = has('chop'); break;
     case 'stack': ok = has('wood'); break;
+    case 'mine': ok = has('mine'); break;
+    case 'stone': ok = has('stone'); break;
+    case 'build': ok = events.some((e) => e.type === 'built' && e.item === 'wall'); break;
+    case 'craft': ok = events.some((e) => e.type === 'built' && e.item === 'spear'); break;
+    case 'attack': ok = has('swing'); break;
     case 'trap': ok = has('trap'); break;
     case 'dusk': ok = s.phase === 'night'; break;
     case 'night': ok = s.over && s.result === 'won'; break;
@@ -95,6 +126,8 @@ export function tutorialHint(tut, s) {
   if ((step.id === 'dig' || step.id === 'chop') && p.carry.length >= s.st.cap) warn = 'YOUR BAG IS FULL. EMPTY IT AT CAMP FIRST.';
   else if (step.id === 'chop' && s.world.sites.some((x) => x.bones > 0 && dist(x, p) < CFG.digR)) warn = 'TOO CLOSE TO A DIG SITE. USE THE MARKED TREE.';
   else if (step.id === 'dig' && p.moving && dist(p, tut.site) < CFG.digR) warn = 'STAND STILL TO DIG.';
+  else if (step.id === 'mine' && p.carry.length >= s.st.cap) warn = 'YOUR BAG IS FULL. EMPTY IT AT CAMP FIRST.';
+  else if ((step.id === 'mine' || step.id === 'attack' || step.id === 'trap') && p.build !== null) warn = 'YOU ARE IN BUILD MODE. PRESS {BUILD} TO CLOSE IT.';
   return { text: step.text, tip: warn || (tut.t > TIP_AFTER ? step.tip : null), warn: !!warn, n: tut.i + 1, of: STEPS.length };
 }
 
@@ -102,8 +135,9 @@ export function tutorialHint(tut, s) {
 export function tutorialTarget(tut, s) {
   switch (STEPS[tut.i].id) {
     case 'dig': return tut.site;
-    case 'bank': case 'stack': case 'dusk': return s.world.camp;
+    case 'bank': case 'stack': case 'stone': case 'dusk': return s.world.camp;
     case 'chop': return tut.tree;
+    case 'mine': return tut.rock;
     default: return null;
   }
 }

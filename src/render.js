@@ -616,7 +616,8 @@ export function makeRenderer(cv) {
       for (const g of ['sling', 'spear']) if (s.owned[g]) { blit(art.icons[g], gx, y + 3); gx -= 12; }
     });
 
-    let ty = H - 14;
+    // Messages sit above any open build bars.
+    let ty = H - 14 - s.players.filter((p) => p.build !== null && !p.down).length * 54;
     for (let i = toasts.length - 1; i >= 0; i--) {
       const m = toasts[i];
       const w = textWidth(m.msg) + 10;

@@ -76,7 +76,8 @@ export function newRun({ seed = 1, players = 1, upgrades = {}, perks = [], reque
     seed, rng, world, st, players: ps, dinos: [], traps: [], drops: [], spits: [], shots: [], flares: [],
     structures: [], structAt: new Map(), stock: { wood: 0, stone: 0 }, owned: {},
     trait: traitId, tier: t, valueMult,
-    reqBase: requestsDone, requestsFilled: 0, unlocked: [],
+    // The tutorial borrows the first few unlocks (wall, spear) to teach building.
+    reqBase: tutorial ? 3 : requestsDone, requestsFilled: 0, unlocked: [],
     contract: tutorial ? null : pickContract(world, side, requestsDone, valueMult),
     phase: 'day', t: 0, night: 0, fire: st.fireR, fuel: 1, time: 0,
     dayLen: CFG.dayLen, nightLen: tutorial ? 30 : CFG.nightLen, nights: tutorial ? 1 : Infinity,

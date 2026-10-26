@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { newRun, update } from '../src/game.js';
+import { newRun, update, buildList } from '../src/game.js';
 import { CFG } from '../src/data.js';
 import { makeTutorial, updateTutorial, currentStep, tutorialHint, tutorialTarget, STEPS, TUTORIAL_SEED, TIP_AFTER } from '../src/tutorial.js';
 import { fillKeys } from '../src/keys.js';
@@ -26,7 +26,7 @@ test('tutorial island is calm, short, and has its marked site and tree', () => {
   assert.equal(s.trait, 'none');
   assert.equal(s.nights, 1);
   assert.equal(s.contract, null, 'no museum request to distract');
-  assert.ok(tut.site && tut.tree && tut.tree.stand);
+  assert.ok(tut.site && tut.tree && tut.tree.stand && tut.rock);
   assert.equal(currentStep(tut).id, 'move');
 });
 
@@ -52,6 +52,22 @@ test('full walkthrough with real inputs completes the tutorial', () => {
   at(s, tut.tree.stand); hold(s, tut, CFG.chopTime + 0.1, { dig: true }); // chop
   assert.equal(currentStep(tut).id, 'stack');
   at(s, s.world.camp); frame(s, tut);                                  // stack
+  assert.equal(currentStep(tut).id, 'mine');
+  at(s, tut.rock); hold(s, tut, CFG.mineTime + 0.1, { dig: true });    // mine
+  assert.equal(currentStep(tut).id, 'stone');
+  at(s, s.world.camp); frame(s, tut);                                  // stone
+  assert.equal(currentStep(tut).id, 'build');
+  const p = s.players[0];
+  Object.assign(p, { x: s.world.camp.x, y: s.world.camp.y + 90, fx: 0, fy: 1 });
+  const tapIn = (inp) => { frame(s, tut, inp); frame(s, tut); };
+  tapIn({ build: true });
+  for (let i = 0; i < 10 && buildList(s)[p.build].id !== 'wall'; i++) tapIn({ trap: true });
+  tapIn({ dig: true });                                                // build
+  assert.equal(currentStep(tut).id, 'craft');
+  for (let i = 0; i < 10 && buildList(s)[p.build].id !== 'spear'; i++) tapIn({ trap: true });
+  tapIn({ dig: true });                                                // craft
+  assert.equal(currentStep(tut).id, 'attack');
+  tapIn({ build: true }); tapIn({ attack: true });                     // attack
   assert.equal(currentStep(tut).id, 'trap');
   frame(s, tut, { trap: true }); frame(s, tut);                        // trap
   assert.equal(currentStep(tut).id, 'dusk');
