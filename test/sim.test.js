@@ -682,3 +682,21 @@ test('expedition tier follows lifetime requests', () => {
   assert.equal(tierFor(CFG.requestsPerTier), 1);
   assert.equal(newRun({ trait: 'none', seed: 3, requestsDone: 7 }).tier, 2);
 });
+
+test('the build target is never a tile a player stands on', () => {
+  const s = builder({ players: 2 });
+  const [a, b] = s.players;
+  const spot = openSpot(s, 300);
+  // Every facing, at every spot inside the tile (edges and corners included).
+  for (const ox of [-15, -8, 0, 8, 15]) for (const oy of [-15, -8, 0, 8, 15]) {
+    for (let k = 0; k < 16; k++) {
+      const ang = (k / 16) * Math.PI * 2;
+      Object.assign(a, { x: Math.floor(spot.x / TILE) * TILE + 16 + ox, y: Math.floor(spot.y / TILE) * TILE + 16 + oy, fx: Math.cos(ang), fy: Math.sin(ang) });
+      const tg = buildTarget(s, a);
+      assert.ok(tg.tx !== Math.floor(a.x / TILE) || tg.ty !== Math.floor(a.y / TILE), `own tile at ${ox},${oy} facing ${k}`);
+    }
+  }
+  Object.assign(a, { x: spot.x, y: spot.y, fx: 1, fy: 0 });
+  Object.assign(b, { x: spot.x + TILE, y: spot.y });
+  assert.equal(buildTarget(s, a).why, 'player', 'not on a partner either');
+});

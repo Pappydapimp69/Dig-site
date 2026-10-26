@@ -764,7 +764,7 @@ export function makeRenderer(cv) {
       if (p.build.mode === 'place') {
         const b = buildById[p.build.id];
         const tg = buildTarget(s, p);
-        const ok = canAfford(s, b) && (tg.ok || b.id === 'snare');
+        const ok = canAfford(s, b) && (tg.ok || (b.id === 'snare' && tg.why !== 'blocked' && tg.why !== 'player'));
         const x = tg.x / 2 - cam.x, y = tg.y / 2 - cam.y;
         ctx.globalAlpha = 0.55 + Math.sin(s.time * 8) * 0.15;
         const img = buildIcon(b.id);

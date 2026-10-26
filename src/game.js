@@ -106,11 +106,17 @@ export const canAfford = (s, b) => Object.entries(b.cost).every(([k, n]) => (s.s
 
 // The tile in front of the player, and whether a structure can go there.
 export function buildTarget(s, p) {
-  const tx = Math.floor((p.x + p.fx * TILE * 0.9) / TILE);
-  const ty = Math.floor((p.y + p.fy * TILE * 0.9) / TILE);
+  // Always the neighbouring tile in the facing direction (8-way), never the
+  // tile you stand on.
+  const sx = Math.abs(p.fx) > 0.38 ? Math.sign(p.fx) : 0;
+  const sy = Math.abs(p.fy) > 0.38 ? Math.sign(p.fy) : 0;
+  const tx = Math.floor(p.x / TILE) + (sx || sy ? sx : 0);
+  const ty = Math.floor(p.y / TILE) + (sx || sy ? sy : 1);
   const x = (tx + 0.5) * TILE, y = (ty + 0.5) * TILE;
+  const onTile = (q) => !q.down && Math.floor(q.x / TILE) === tx && Math.floor(q.y / TILE) === ty;
   let why = null;
   if (tx < 0 || ty < 0 || tx >= s.world.w || ty >= s.world.h || blocked(s.world, x, y, 2)) why = 'blocked';
+  else if (s.players.some(onTile)) why = 'player';
   else if (s.structAt.has(keyOf(s, tx, ty))) why = 'taken';
   else if (dist({ x, y }, s.world.camp) < 40) why = 'fire';
   else if (s.world.sites.some((st) => st.bones > 0 && dist(st, { x, y }) < TILE * 0.7)) why = 'site';
@@ -148,7 +154,7 @@ function act(s, p, b) {
   if (b.kind === 'place') {
     const tg = buildTarget(s, p);
     if (b.id === 'snare') {
-      if (blocked(s.world, tg.x, tg.y, 2)) return 'cantbuild';
+      if (tg.why === 'blocked' || tg.why === 'player') return 'cantbuild';
       s.traps.push({ x: tg.x, y: tg.y, armed: true });
     } else {
       if (!tg.ok) return 'cantbuild';
